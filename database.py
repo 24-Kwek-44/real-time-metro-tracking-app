@@ -4,8 +4,9 @@ db = sqlite3.connect('db.sqlite')
 
 db.execute('''CREATE TABLE IF NOT EXISTS station(
     station_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    route TEXT NOT NULL,
+    station_name TEXT NOT NULL,
+    destination_name TEXT NOT NULL,
+    route TEXT NOT NULL
 
 )''')
 
