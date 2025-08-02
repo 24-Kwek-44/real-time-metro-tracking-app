@@ -1,86 +1,83 @@
-import sqlite3
-
-db = sqlite3.connect('db.sqlite')
-
-db.execute('''CREATE TABLE IF NOT EXISTS station(
-    station_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    station_name TEXT NOT NULL,
-    destination_name TEXT NOT NULL,
-    route TEXT NOT NULL
-
-)''')
-
-db.execute('''
-CREATE TABLE IF NOT EXISTS fare_matrix (
-    origin_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    destination_id INTEGER,
-    price REAL
-)
-''')    
-
-cursor = db.cursor()
-
-
-db.commit()
-db.close()  
-
-
-import sqlite3
 import csv
+import sqlite3
 import os
 
 DB_NAME = 'db.sqlite'
-ROUTE_CSV = 'Route.csv'
-FARE_CSV = 'Fare.csv'
-ROUTE_NAME = 'Kelana Jaya Line'
 
+def create_database():
+    """Create the database and both tables if they don't exist."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS station (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            station_name TEXT NOT NULL,
+            destination_name TEXT NOT NULL,
+            route TEXT NOT NULL
+        )
+    ''')
 
-def create_tables():
-    db = sqlite3.connect(DB_NAME)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fare_matrix (
+            fare_id INTEGER,
+            station_name TEXT NOT NULL,
+            destination_name TEXT NOT NULL,
+            price REAL
+        )
+    ''')
 
-    db.execute('''CREATE TABLE IF NOT EXISTS station (
-        station_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        station_name TEXT NOT NULL,
-        destination_name TEXT NOT NULL,
-        route TEXT NOT NULL
-    )''')
+    conn.commit()
+    conn.close()
+    print("Database and both tables are ready.")
 
-    db.execute('''CREATE TABLE IF NOT EXISTS fare_matrix (
-        origin_id INTEGER,
-        destination_id INTEGER,
-        price REAL,
-        PRIMARY KEY (origin_id, destination_id)
-    )''')
+def extract_line_and_name(cell):
+    """Extract line prefix and station name from 'SBK[Kajang]' or just 'Kajang'."""
+    cell = cell.strip()
+    if "[" in cell and "]" in cell:
+        prefix = cell.split("[")[0].strip()
+        name = cell.split("[")[1].replace("]", "").strip()
+    else:
+        prefix = ""
+        name = cell
+    return prefix, name
 
-    db.commit()
-    db.close()
-
-
-# Utility: Build name → id mapping
-def get_station_ids():
+def ingest_route(file_path):
+    """Read route CSV and insert data into the database."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    cursor.execute('SELECT DISTINCT station_name FROM station')
-    station_names = {row[0] for row in cursor.fetchall()}
+    with open(file_path, newline='', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        data = list(reader)
 
-    all_names = list(station_names)
-    name_to_id = {}
+        destinations = data[0][1:]  # First row, skipping the top-left cell
 
-    for name in all_names:
-        cursor.execute('''
-            SELECT station_id FROM station
-            WHERE station_name = ? LIMIT 1
-        ''', (name,))
-        result = cursor.fetchone()
-        if result:
-            name_to_id[name] = result[0]
+        for i in range(1, len(data)):
+            row = data[i]
+            origin_name = row[0].strip()
 
+            for j in range(1, len(row)):
+                dest_name = destinations[j - 1].strip()
+                route_str = row[j].strip()
+
+                if not route_str:
+                    continue  # skip empty cells
+
+                try:
+                    cursor.execute('''
+                        INSERT INTO station (station_name, destination_name, route)
+                        VALUES (?, ?, ?)
+                    ''', (origin_name, dest_name, route_str))
+                except Exception as e:
+                    print(f"Error inserting route {origin_name} -> {dest_name}: {e}")
+
+    conn.commit()
     conn.close()
-    return name_to_id
+    print("Route matrix ingested successfully.")
 
-
-def ingest_route_matrix(file_path):
+def ingest_fares(file_path):
+    """Read fare CSV and insert data into the fare_matrix table."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
@@ -90,79 +87,42 @@ def ingest_route_matrix(file_path):
 
         destinations = data[0][1:]
 
+        fare_id = 1
+
         for i in range(1, len(data)):
             row = data[i]
-            origin_name = row[0]
+            origin_cell = row[0].strip()
+            _, origin_name = extract_line_and_name(origin_cell)
 
             for j in range(1, len(row)):
-                dest_name = destinations[j - 1]
+                dest_cell = destinations[j - 1].strip()
+                _, dest_name = extract_line_and_name(dest_cell)
 
                 try:
+                    price = float(row[j].strip())
+                except:
+                    price = None
+
+                if origin_name and dest_name and price is not None:
                     cursor.execute('''
-                        INSERT INTO station (station_name, destination_name, route)
-                        VALUES (?, ?, ?)
-                    ''', (origin_name, dest_name, ROUTE_NAME))
-                except Exception as e:
-                    print(f"Error inserting station {origin_name} -> {dest_name}: {e}")
+                        INSERT INTO fare_matrix (fare_id, station_name, destination_name, price)
+                        VALUES (?, ?, ?, ?)
+                    ''', (fare_id, origin_name, dest_name, price))
+                    fare_id += 1
 
     conn.commit()
     conn.close()
-    print("✅ Route matrix ingested.")
-
-
-def ingest_fare_matrix(file_path):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    with open(file_path, newline='', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        data = list(reader)
-
-        destination_names = data[0][1:]
-        origin_to_row = data[1:]
-
-        # Create temp mapping of name → new ID
-        all_names = set(destination_names + [row[0] for row in origin_to_row])
-        name_to_id = {name: idx + 1 for idx, name in enumerate(sorted(all_names))}
-
-        for i, row in enumerate(origin_to_row):
-            origin_name = row[0]
-            for j in range(1, len(row)):
-                dest_name = destination_names[j - 1]
-                price = row[j].strip()
-
-                if not price:
-                    continue  # skip empty
-
-                try:
-                    origin_id = name_to_id[origin_name]
-                    dest_id = name_to_id[dest_name]
-
-                    cursor.execute('''
-                        INSERT OR REPLACE INTO fare_matrix (origin_id, destination_id, price)
-                        VALUES (?, ?, ?)
-                    ''', (origin_id, dest_id, float(price)))
-                except Exception as e:
-                    print(f"Error inserting fare {origin_name} -> {dest_name}: {e}")
-
-    conn.commit()
-    conn.close()
-    print("✅ Fare matrix ingested.")
-
-
-def initialize_database():
-    create_tables()
-
-    if os.path.exists(ROUTE_CSV):
-        ingest_route_matrix(ROUTE_CSV)
-    else:
-        print(f"❌ Missing {ROUTE_CSV}")
-
-    if os.path.exists(FARE_CSV):
-        ingest_fare_matrix(FARE_CSV)
-    else:
-        print(f"❌ Missing {FARE_CSV}")
-
+    print("Fare data ingested.")
 
 if __name__ == "__main__":
-    initialize_database()
+    create_database()
+
+    if not os.path.exists("route.csv"):
+        print("route.csv not found.")
+    else:
+        ingest_route("route.csv")
+
+    if not os.path.exists("Fare.csv"):
+        print("Fare.csv not found.")
+    else:
+        ingest_fares("Fare.csv")
