@@ -3,6 +3,11 @@ import sqlite3
 import os
 
 DB_NAME = 'db.sqlite'
+def get_db_connection():
+    """Establish a connection to the database and set row factory."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def create_database():
     """Create the database and both tables if they don't exist."""
@@ -117,12 +122,12 @@ def ingest_fares(file_path):
 if __name__ == "__main__":
     create_database()
 
-    if not os.path.exists("route.csv"):
+    if not os.path.exists("data/Route.csv"):
         print("route.csv not found.")
     else:
-        ingest_route("route.csv")
+        ingest_route("data/Route.csv")
 
-    if not os.path.exists("Fare.csv"):
+    if not os.path.exists("data/Fare.csv"):
         print("Fare.csv not found.")
     else:
-        ingest_fares("Fare.csv")
+        ingest_fares("data/Fare.csv")

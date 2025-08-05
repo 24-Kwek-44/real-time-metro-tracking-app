@@ -1,39 +1,52 @@
 # routes.py
 
 from flask import Blueprint, jsonify, request
+from database import get_db_connection 
 
 # Create a Blueprint named 'api'
 api = Blueprint('api', __name__)
 
-# Stub for /stations endpoint
 @api.route('/stations', methods=['GET'])
 def get_stations():
-    """Returns a list of all station metadata."""
-    # This is fake data for now.
-    # Later, this will come from the database.
-    fake_stations = [
-        {"station_id": "ST1", "name": "Central Station", "latitude": 3.1390, "longitude": 101.6869},
-        {"station_id": "ST2", "name": "North Hub", "latitude": 3.1587, "longitude": 101.7118}
-    ]
-    return jsonify(fake_stations)
+    """Returns a list of all unique station names from the database."""
+    conn = get_db_connection()
+    stations_from_db = conn.execute(
+        'SELECT DISTINCT station_name FROM fare_matrix ORDER BY station_name'
+    ).fetchall()
+    conn.close()
 
-# Stub for /fare endpoint
+    stations = []
+    for row in stations_from_db:
+        stations.append({"name": row['station_name']})
+
+    return jsonify(stations)
+
 @api.route('/fare', methods=['GET'])
 def get_fare():
-    """Returns the fare between two stations."""
-    # Get 'from' and 'to' station IDs from the query parameters
+    """Returns the fare between two stations from the database."""
     from_station = request.args.get('from')
     to_station = request.args.get('to')
 
     if not from_station or not to_station:
         return jsonify({"error": "Missing 'from' or 'to' station parameters"}), 400
 
-    # This is a fake fare for now.
-    fake_fare = {"from": from_station, "to": to_station, "price": 5.50}
-    return jsonify(fake_fare)
+    conn = get_db_connection()
+    fare_data = conn.execute(
+        'SELECT price FROM fare_matrix WHERE station_name = ? AND destination_name = ?',
+        (from_station, to_station)
+    ).fetchone()
+    conn.close()
 
+    if fare_data is None:
+        return jsonify({"error": "Fare not found for the specified route"}), 404
 
-# Stub for /route endpoint
+    real_fare = {
+        "from": from_station,
+        "to": to_station,
+        "price": fare_data['price']
+    }
+    return jsonify(real_fare)
+
 @api.route('/route', methods=['GET'])
 def get_route():
     """Computes and returns the shortest path (by hops or price)."""
@@ -43,7 +56,6 @@ def get_route():
     if not from_station or not to_station:
         return jsonify({"error": "Missing 'from' or 'to' station parameters"}), 400
 
-    # This is a fake route for now.
     fake_route = {
         "from": from_station,
         "to": to_station,
