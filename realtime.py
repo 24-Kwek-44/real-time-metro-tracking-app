@@ -1,18 +1,30 @@
 from flask_socketio import SocketIO, emit
 
 # Create the SocketIO server instance.
-# The async_mode is set to 'threading' for compatibility with the standard Flask server.
+# We explicitly set the async_mode to 'threading' for compatibility with the
+# standard Flask development server.
 socketio = SocketIO(async_mode='threading')
 
-# Define what happens when a client connects to the server
+
+# --- Default Event Handlers ---
 @socketio.on('connect')
 def handle_connect():
-    """Event handler for new client connections."""
     print('Client connected successfully!')
-    # Send a welcome message back to the connected client
+    # 'emit' sends a message back to the client that just connected.
     emit('welcome_message', {'data': 'Welcome to the real-time server!'})
 
-# You can add more event handlers here later, like for 'disconnect'.
+
 @socketio.on('disconnect')
 def handle_disconnect():
     print('Client disconnected.')
+
+
+# --- Custom Application Event Handlers ---
+# This handler will be triggered by the data_generator.py script.
+@socketio.on('train_update')
+def handle_train_update(data):
+    print(f"Received train update from generator: {data}")
+    # 'emit' with 'broadcast=True' sends the message to ALL connected clients.
+    # We use a different event name ('new_train_position') to distinguish
+    # it from the incoming event.
+    socketio.emit('new_train_position', data, broadcast=True)

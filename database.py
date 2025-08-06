@@ -2,18 +2,23 @@ import csv
 import sqlite3
 import os
 
+# --- Constants ---
 DB_NAME = 'db.sqlite'
+
+
+# --- Core Database Functions ---
 def get_db_connection():
-    """Establish a connection to the database and set row factory."""
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     return conn
 
-def create_database():
-    """Create the database and both tables if they don't exist."""
-    conn = sqlite3.connect(DB_NAME)
+
+def create_database_schema():
+    print("Creating database schema...")
+    conn = get_db_connection()
     cursor = conn.cursor()
     
+    # The 'station' table stores direct station-to-station connections and the route description.
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS station (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,9 +28,9 @@ def create_database():
         )
     ''')
 
+    # The 'fare_matrix' table stores the fare for a trip between an origin and a destination.
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS fare_matrix (
-            fare_id INTEGER,
             station_name TEXT NOT NULL,
             destination_name TEXT NOT NULL,
             price REAL
@@ -34,100 +39,74 @@ def create_database():
 
     conn.commit()
     conn.close()
-    print("Database and both tables are ready.")
+    print("Database schema is ready.")
 
-def extract_line_and_name(cell):
-    """Extract line prefix and station name from 'SBK[Kajang]' or just 'Kajang'."""
-    cell = cell.strip()
-    if "[" in cell and "]" in cell:
-        prefix = cell.split("[")[0].strip()
-        name = cell.split("[")[1].replace("]", "").strip()
-    else:
-        prefix = ""
-        name = cell
-    return prefix, name
 
-def ingest_route(file_path):
-    """Read route CSV and insert data into the database."""
-    conn = sqlite3.connect(DB_NAME)
+# --- Data Ingestion and Parsing ---
+def _extract_station_name(cell_text):
+    cell_text = cell_text.strip()
+    if "[" in cell_text and "]" in cell_text:
+        # Extracts 'Kajang' from 'SBK[Kajang]'
+        return cell_text.split("[")[1].replace("]", "").strip()
+    return cell_text
+
+
+def ingest_data_from_csv(file_path, table_name):
+    print(f"Ingesting data from {os.path.basename(file_path)} into '{table_name}'...")
+    conn = get_db_connection()
     cursor = conn.cursor()
 
-    with open(file_path, newline='', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        data = list(reader)
+    try:
+        with open(file_path, newline='', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            # The first row contains the destination station names.
+            destinations = next(reader)[1:]
+            
+            for row in reader:
+                origin_cell = row[0]
+                
+                # Iterate through each cell in the row, pairing it with a destination.
+                for i, cell_value in enumerate(row[1:]):
+                    # Skip empty cells or cells with placeholder values.
+                    if not cell_value or cell_value.strip() == '-':
+                        continue  
 
-        destinations = data[0][1:]  # First row, skipping the top-left cell
+                    dest_cell = destinations[i]
 
-        for i in range(1, len(data)):
-            row = data[i]
-            origin_name = row[0].strip()
-
-            for j in range(1, len(row)):
-                dest_name = destinations[j - 1].strip()
-                route_str = row[j].strip()
-
-                if not route_str:
-                    continue  # skip empty cells
-
-                try:
-                    cursor.execute('''
-                        INSERT INTO station (station_name, destination_name, route)
-                        VALUES (?, ?, ?)
-                    ''', (origin_name, dest_name, route_str))
-                except Exception as e:
-                    print(f"Error inserting route {origin_name} -> {dest_name}: {e}")
+                    if table_name == 'station':
+                        cursor.execute(
+                            'INSERT INTO station (station_name, destination_name, route) VALUES (?, ?, ?)',
+                            (origin_cell, dest_cell, cell_value)
+                        )
+                    elif table_name == 'fare_matrix':
+                        origin_name = _extract_station_name(origin_cell)
+                        dest_name = _extract_station_name(dest_cell)
+                        price = float(cell_value)
+                        cursor.execute(
+                            'INSERT INTO fare_matrix (station_name, destination_name, price) VALUES (?, ?, ?)',
+                            (origin_name, dest_name, price)
+                        )
+    except FileNotFoundError:
+        print(f"ERROR: File not found at {file_path}. Skipping ingestion.")
+        return 
+    except Exception as e:
+        print(f"An unexpected error occurred during ingestion from {file_path}: {e}")
+        return
 
     conn.commit()
     conn.close()
-    print("Route matrix ingested successfully.")
+    print(f"Successfully ingested data into '{table_name}'.")
 
-def ingest_fares(file_path):
-    """Read fare CSV and insert data into the fare_matrix table."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
 
-    with open(file_path, newline='', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        data = list(reader)
+def initialize_database():
+    print("--- Starting Database Initialization ---")
+    create_database_schema()
+    ingest_data_from_csv("data/Route.csv", "station")
+    ingest_data_from_csv("data/Fare.csv", "fare_matrix")
+    print("--- Database Initialization Complete ---")
 
-        destinations = data[0][1:]
 
-        fare_id = 1
-
-        for i in range(1, len(data)):
-            row = data[i]
-            origin_cell = row[0].strip()
-            _, origin_name = extract_line_and_name(origin_cell)
-
-            for j in range(1, len(row)):
-                dest_cell = destinations[j - 1].strip()
-                _, dest_name = extract_line_and_name(dest_cell)
-
-                try:
-                    price = float(row[j].strip())
-                except:
-                    price = None
-
-                if origin_name and dest_name and price is not None:
-                    cursor.execute('''
-                        INSERT INTO fare_matrix (fare_id, station_name, destination_name, price)
-                        VALUES (?, ?, ?, ?)
-                    ''', (fare_id, origin_name, dest_name, price))
-                    fare_id += 1
-
-    conn.commit()
-    conn.close()
-    print("Fare data ingested.")
-
+# This block allows the script to be run directly from the command line
+# to set up the database.
 if __name__ == "__main__":
-    create_database()
-
-    if not os.path.exists("data/Route.csv"):
-        print("route.csv not found.")
-    else:
-        ingest_route("data/Route.csv")
-
-    if not os.path.exists("data/Fare.csv"):
-        print("Fare.csv not found.")
-    else:
-        ingest_fares("data/Fare.csv")
+    initialize_database()

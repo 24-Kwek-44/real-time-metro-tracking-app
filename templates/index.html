@@ -1,37 +1,72 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Basic HTML5 metadata -->
     <meta charset="UTF-8">
     <title>Metro Tracking App</title>
-    <!-- Include the Socket.IO client library -->
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+    <style>
+        /* A little bit of styling to make the status clearer */
+        body { font-family: sans-serif; }
+        #status.connected { color: green; font-weight: bold; }
+        #status.disconnected { color: red; font-weight: bold; }
+    </style>
 </head>
 <body>
     <h1>Metro Tracking Kiosk</h1>
-    <p>Status: <span id="status">Connecting...</span></p>
-    <p>Server Message: <strong id="message"></strong></p>
 
+    <!-- These elements are placeholders to display feedback from the server -->
+    <p>Status: <span id="status">Connecting...</span></p>
+    <p>Last Server Message: <strong id="message"></strong></p>
+
+    <!-- The main JavaScript logic for the client-side application -->
     <script>
-        // Establish a connection to the WebSocket server
+        // --- 1. Establish WebSocket Connection ---
+        // The `io.connect()` function, provided by the Socket.IO library,
+        // establishes a persistent connection to the server.
+        // Using document.domain and location.port makes the connection URL dynamic,
+        // so it works correctly whether running locally or on a deployed server.
         const socket = io.connect('http://' + document.domain + ':' + location.port);
 
-        // --- Event listener for when the connection is successful ---
+
+        // --- 2. Define WebSocket Event Listeners ---
+        // The client's logic is event-driven. These functions wait for
+        // specific events from the server and then execute code.
+
+        // Fired automatically upon a successful connection.
         socket.on('connect', () => {
             console.log('Successfully connected to the WebSocket server!');
-            document.getElementById('status').textContent = 'Connected';
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = 'Connected';
+            statusEl.className = 'connected'; // Apply green color style
         });
 
-        // --- Event listener for the custom 'welcome_message' from the server ---
+        // Fired automatically upon disconnection.
+        socket.on('disconnect', () => {
+            console.log('Disconnected from the WebSocket server.');
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = 'Disconnected';
+            statusEl.className = 'disconnected'; // Apply red color style
+        });
+
+        // Fired when the server sends a 'welcome_message' event.
         socket.on('welcome_message', (msg) => {
             console.log('Received welcome message:', msg);
             document.getElementById('message').textContent = msg.data;
         });
-
-        // --- Event listener for disconnection ---
-        socket.on('disconnect', () => {
-            console.log('Disconnected from the server.');
-            document.getElementById('status').textContent = 'Disconnected';
+        
+        // Fired when the server broadcasts a 'new_train_position' event.
+        // This is where live train data will be handled.
+        socket.on('new_train_position', (data) => {
+            console.log('New train position received:', data);
+            
+            // For now, we'll just display the update text.
+            // In the final version, this logic will update markers on a map.
+            const messageEl = document.getElementById('message');
+            messageEl.textContent = `Update: Train ${data.train_id} is now at ${data.current_station}.`;
         });
+
     </script>
 </body>
 </html>
