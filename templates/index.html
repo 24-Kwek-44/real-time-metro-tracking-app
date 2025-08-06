@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Metro Tracking App</title>
+    <!-- Include the Socket.IO client library -->
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Metro Tracking Kiosk</h1>
+    <p>Status: <span id="status">Connecting...</span></p>
+    <p>Server Message: <strong id="message"></strong></p>
+
+    <script>
+        // Establish a connection to the WebSocket server
+        const socket = io.connect('http://' + document.domain + ':' + location.port);
+
+        // --- Event listener for when the connection is successful ---
+        socket.on('connect', () => {
+            console.log('Successfully connected to the WebSocket server!');
+            document.getElementById('status').textContent = 'Connected';
+        });
+
+        // --- Event listener for the custom 'welcome_message' from the server ---
+        socket.on('welcome_message', (msg) => {
+            console.log('Received welcome message:', msg);
+            document.getElementById('message').textContent = msg.data;
+        });
+
+        // --- Event listener for disconnection ---
+        socket.on('disconnect', () => {
+            console.log('Disconnected from the server.');
+            document.getElementById('status').textContent = 'Disconnected';
+        });
+    </script>
+</body>
+</html>
