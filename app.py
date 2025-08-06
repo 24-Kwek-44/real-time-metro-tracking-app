@@ -1,7 +1,8 @@
 from flask import Flask, render_template
-from routes import api  
+from routes import api, build_network_graph 
 from realtime import socketio 
 
+build_network_graph()
 
 # Create an instance of the Flask application
 app = Flask(__name__)
