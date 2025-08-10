@@ -1,7 +1,7 @@
 # routes.py
 """
 Defines all HTTP API endpoints for the Flask application.
-This version is updated to work with the new, normalized database schema.
+This version is updated to work with the new, simplified database schema.
 """
 from flask import Blueprint, jsonify, request
 from database import get_db_connection
@@ -12,13 +12,10 @@ network_graph = {}
 
 # --- Graph Construction and Helper Functions ---
 def build_network_graph():
-    """
-    Builds an undirected graph of the station network from the 'connections' table.
-    """
+    """Builds an undirected graph of the station network from the 'connections' table."""
     global network_graph
     print("Building station network graph from the 'connections' table...")
     conn = get_db_connection()
-    # CORRECTED: Query the 'connections' table
     connections_from_db = conn.execute('SELECT origin_name, destination_name FROM connections').fetchall()
     conn.close()
 
@@ -42,7 +39,6 @@ def _calculate_path_fare(path):
     total_fare = 0
     conn = get_db_connection()
     for i in range(len(path) - 1):
-        # CORRECTED: Query the 'fares' table
         fare_data = conn.execute(
             'SELECT price FROM fares WHERE origin_name = ? AND destination_name = ?',
             (path[i], path[i+1])
@@ -54,15 +50,19 @@ def _calculate_path_fare(path):
 
 # --- API Endpoints ---
 
+# In routes.py
 @api.route('/stations', methods=['GET'])
 def get_stations():
-    """Returns a JSON list of all unique station names from the 'stations' table."""
+    """Returns a JSON list of all stations with their name and coordinates."""
     conn = get_db_connection()
-    # CORRECTED: Query the new 'stations' table
-    stations_from_db = conn.execute('SELECT name FROM stations ORDER BY name').fetchall()
+    # Select the new latitude and longitude columns.
+    stations_from_db = conn.execute(
+        'SELECT name, latitude, longitude FROM stations ORDER BY name'
+    ).fetchall()
     conn.close()
     
-    stations = [{"name": row['name']} for row in stations_from_db]
+    # The dict(row) conversion will now automatically include the new columns.
+    stations = [dict(row) for row in stations_from_db]
     return jsonify(stations)
 
 @api.route('/fare', methods=['GET'])
@@ -75,7 +75,6 @@ def get_fare():
         return jsonify({"error": "Missing 'from' or 'to' station parameters"}), 400
 
     conn = get_db_connection()
-    # CORRECTED: Query the 'fares' table
     fare_data = conn.execute(
         'SELECT price FROM fares WHERE origin_name = ? AND destination_name = ?',
         (from_station, to_station)
@@ -105,7 +104,6 @@ def get_route():
     if from_station not in network_graph or to_station not in network_graph:
         return jsonify({"error": "One or both stations not found in the network"}), 404
 
-    # The BFS logic itself does not need to change, as it works with the graph
     queue = deque([(from_station, [from_station])])
     visited = {from_station}
 
