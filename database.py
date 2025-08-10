@@ -1,15 +1,28 @@
-# database.py (DEFINITIVE FINAL - Based on Official Maps)
+"""
+Handles the one-time setup and population of the project's SQLite database.
+
+This script is the definitive source of truth for the database schema and data. It:
+1. Defines the table structure (stations, connections, fares).
+2. Populates the 'stations' table with names discovered from Fare.csv and enriches
+   it with a hardcoded dictionary of manually verified coordinates.
+3. Populates the 'fares' table from Fare.csv.
+4. Builds the network graph by creating 'connections' based on the real-world
+   sequence of stations defined in hardcoded line data.
+"""
+
 import csv
 import sqlite3
 import os
 from config import DATABASE_NAME
 
+# --- Constants and Configuration ---
 DB_FILE = DATABASE_NAME
 FARE_CSV_PATH = os.path.join(os.path.dirname(__file__), 'data', 'Fare.csv')
 
-# --- MANUALLY VERIFIED COORDINATE DATA ---
+# --- Data Sources (Considered as Configuration) ---
+
 # This dictionary is the "source of truth" for station coordinates,
-# capturing the manual data entry work.
+# capturing the manual data enrichment work.
 VERIFIED_COORDINATES = {
     "Abdullah Hukum": {"lat": 3.1188319, "lon": 101.6732377},
     "Alam Megah": {"lat": 3.0231025098204394, "lon": 101.57211549888724},
@@ -80,8 +93,9 @@ VERIFIED_COORDINATES = {
     "Wangsa Maju": {"lat": 3.2057781, "lon": 101.7318615},
     "Wawasan": {"lat": 3.03507492592289, "lon": 101.58834495372092},
 }
-# --- DEFINITIVE SOURCE OF TRUTH FOR CONNECTIONS (FROM OFFICIAL MAPS) ---
-# These lists represent the actual, sequential order of stations on each line.
+
+# These lists represent the actual, sequential order of stations on each line,
+# derived from official metro maps. This is the source for the network graph.
 KELANA_JAYA_LINE = [
     "Gombak", "Taman Melati", "Wangsa Maju", "Sri Rampai", "Setiawangsa", "Jelatek", 
     "Dato' Keramat", "Damai", "Ampang Park", "KLCC", "Kampung Baru", "Dang Wangi", 
@@ -103,36 +117,37 @@ KAJANG_LINE = [
     "Batu 11 Cheras", "Bukit Dukung", "Sungai Jernih", "Stadium Kajang", "Kajang"
 ]
 
-# Define interchange stations to create links between lines
+# Defines the "walking connections" between stations that are physically connected
+# but on different lines.
 INTERCHANGE_STATIONS = {
-    # Connect the Kelana Jaya Line platform to the Kajang Line platform at Pasar Seni
     "Pasar Seni (KJL)": "Pasar Seni (SBK)",
-    # We could add more here, for example connecting Muzium Negara to KL Sentral
     "Muzium Negara": "KL Sentral (KJL)",
 }
 
+# --- Core Database Functions ---
 
 def get_db_connection():
+    """Establishes and returns a connection to the SQLite database."""
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
 
-def create_database_schema():
-    conn = get_db_connection()
-    cursor = conn.cursor()
+def create_database_schema(cursor):
+    """Creates all required database tables, dropping old ones if they exist."""
+    print("[INFO] Creating database schema...")
     cursor.execute('DROP TABLE IF EXISTS fares')
     cursor.execute('DROP TABLE IF EXISTS connections')
     cursor.execute('DROP TABLE IF EXISTS stations')
     cursor.execute('CREATE TABLE stations (name TEXT PRIMARY KEY, latitude REAL, longitude REAL)')
     cursor.execute('CREATE TABLE connections (origin_name TEXT, destination_name TEXT)')
     cursor.execute('CREATE TABLE fares (origin_name TEXT, destination_name TEXT, price REAL)')
-    conn.commit()
-    conn.close()
+    print("[INFO] Database schema created successfully.")
 
 def initialize_database():
-    create_database_schema()
+    """Orchestrates the entire database setup process from start to finish."""
     conn = get_db_connection()
     cursor = conn.cursor()
+    create_database_schema(cursor)
 
     # --- Step 1: Discover stations and insert with verified coordinates ---
     print("\n--- Step 1: Populating stations ---")
@@ -149,7 +164,7 @@ def initialize_database():
         stations_to_insert.append((name, coords["lat"], coords["lon"]))
     cursor.executemany('INSERT OR IGNORE INTO stations (name, latitude, longitude) VALUES (?, ?, ?)', stations_to_insert)
     conn.commit()
-    print(f"[SUCCESS] Inserted {len(station_names)} stations.")
+    print(f"[SUCCESS] Inserted {len(stations_to_insert)} stations.")
 
     # --- Step 2: Ingest fares ---
     print("\n--- Step 2: Ingesting fares ---")
@@ -166,17 +181,14 @@ def initialize_database():
     conn.commit()
     print("[SUCCESS] Fares ingested.")
 
-    # --- Step 3: Ingest DIRECT connections from hardcoded lines ---
-    print("\n--- Step 3: Ingesting direct connections from official lines ---")
-    connections_to_add = set() # Use a set to avoid duplicate connections
-    # Process Kelana Jaya Line
-    for i in range(len(KELANA_JAYA_LINE) - 1):
-        connections_to_add.add(tuple(sorted((KELANA_JAYA_LINE[i], KELANA_JAYA_LINE[i+1]))))
-    # Process Kajang Line
-    for i in range(len(KAJANG_LINE) - 1):
-        connections_to_add.add(tuple(sorted((KAJANG_LINE[i], KAJANG_LINE[i+1]))))
-        
-    # Process Interchange Links
+    # --- Step 3: Ingest DIRECT connections from defined lines ---
+    print("\n--- Step 3: Ingesting direct connections ---")
+    connections_to_add = set()
+    all_lines = [KELANA_JAYA_LINE, KAJANG_LINE]
+    for line in all_lines:
+        for i in range(len(line) - 1):
+            connections_to_add.add(tuple(sorted((line[i], line[i+1]))))
+            
     for station1, station2 in INTERCHANGE_STATIONS.items():
         connections_to_add.add(tuple(sorted((station1, station2))))
         

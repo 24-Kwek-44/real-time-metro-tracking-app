@@ -1,18 +1,30 @@
 # routes.py
 """
 Defines all HTTP API endpoints for the Flask application.
-This version is updated to work with the new, simplified database schema.
+
+This module uses a Flask Blueprint to organize routes, handling all request-response
+logic for the application, including station data retrieval, fare lookups, and
+dynamic route computation using a pre-built in-memory graph.
 """
 from flask import Blueprint, jsonify, request
 from database import get_db_connection
 from collections import deque
 
+# Create a Blueprint which will be registered with the Flask app in app.py.
 api = Blueprint('api', __name__)
+
+# This global variable will hold the in-memory graph of the station network.
+# It is populated by the build_network_graph() function upon app startup.
 network_graph = {}
 
 # --- Graph Construction and Helper Functions ---
+
 def build_network_graph():
-    """Builds an undirected graph of the station network from the 'connections' table."""
+    """
+    Builds an undirected graph representation of the station network.
+    This function reads from the 'connections' table and populates the global
+    'network_graph' variable. It is called once at application startup for performance.
+    """
     global network_graph
     print("Building station network graph from the 'connections' table...")
     conn = get_db_connection()
@@ -22,26 +34,28 @@ def build_network_graph():
     graph = {}
     for row in connections_from_db:
         origin, dest = row['origin_name'], row['destination_name']
-        graph.setdefault(origin, [])
-        graph.setdefault(dest, [])
-        if dest not in graph[origin]:
-            graph[origin].append(dest)
-        if origin not in graph[dest]:
-            graph[dest].append(origin)
+        # Ensure that connections are two-way to represent an undirected graph.
+        graph.setdefault(origin, []).append(dest)
+        graph.setdefault(dest, []).append(origin)
 
     network_graph = graph
-    print("Station network graph built successfully.")
+    print(f"Station network graph built successfully with {len(graph)} nodes.")
 
 def _calculate_path_fare(path):
-    """Calculates the total fare for a given path using the 'fares' table."""
+    """
+    Helper function to calculate the total fare for a given path.
+    It iterates through each segment of the path and sums the individual fares.
+    """
     if len(path) < 2:
         return 0.0
     total_fare = 0
     conn = get_db_connection()
     for i in range(len(path) - 1):
+        # Note: Fares are directional, A->B might be different from B->A.
+        # For this dataset they are the same, but this query handles both.
         fare_data = conn.execute(
-            'SELECT price FROM fares WHERE origin_name = ? AND destination_name = ?',
-            (path[i], path[i+1])
+            'SELECT price FROM fares WHERE (origin_name = ? AND destination_name = ?) OR (origin_name = ? AND destination_name = ?)',
+            (path[i], path[i+1], path[i+1], path[i])
         ).fetchone()
         if fare_data and fare_data['price']:
             total_fare += fare_data['price']
@@ -50,24 +64,25 @@ def _calculate_path_fare(path):
 
 # --- API Endpoints ---
 
-# In routes.py
 @api.route('/stations', methods=['GET'])
 def get_stations():
-    """Returns a JSON list of all stations with their name and coordinates."""
+    """
+    Returns a JSON list of all stations with their name and coordinates.
+    This data is used by the frontend to populate station selectors and map markers.
+    """
     conn = get_db_connection()
-    # Select the new latitude and longitude columns.
-    stations_from_db = conn.execute(
-        'SELECT name, latitude, longitude FROM stations ORDER BY name'
-    ).fetchall()
+    stations_from_db = conn.execute('SELECT name, latitude, longitude FROM stations ORDER BY name').fetchall()
     conn.close()
-    
-    # The dict(row) conversion will now automatically include the new columns.
+    # Convert the list of database row objects into a list of dictionaries.
     stations = [dict(row) for row in stations_from_db]
     return jsonify(stations)
 
 @api.route('/fare', methods=['GET'])
 def get_fare():
-    """Returns the direct fare between two specified stations from the 'fares' table."""
+    """
+    Returns the direct fare between two specified stations.
+    Query Params: from (str), to (str).
+    """
     from_station = request.args.get('from')
     to_station = request.args.get('to')
 
@@ -75,10 +90,7 @@ def get_fare():
         return jsonify({"error": "Missing 'from' or 'to' station parameters"}), 400
 
     conn = get_db_connection()
-    fare_data = conn.execute(
-        'SELECT price FROM fares WHERE origin_name = ? AND destination_name = ?',
-        (from_station, to_station)
-    ).fetchone()
+    fare_data = conn.execute('SELECT price FROM fares WHERE origin_name = ? AND destination_name = ?', (from_station, to_station)).fetchone()
     conn.close()
 
     if fare_data is None:
@@ -88,23 +100,25 @@ def get_fare():
 
 @api.route('/route', methods=['GET'])
 def get_route():
-    """Computes the shortest path using BFS on the new graph structure."""
+    """
+    Computes and returns the shortest path (by stops) and total fare
+    between two stations using the Breadth-First Search (BFS) algorithm.
+    Query Params: from (str), to (str).
+    """
     from_station = request.args.get('from')
     to_station = request.args.get('to')
 
     if not from_station or not to_station:
-        return jsonify({"error": "Missing 'from' or 'to' station parameters"}), 400
+        return jsonify({"error": "Missing 'from' or 'to' parameters"}), 400
 
     if from_station == to_station:
-        return jsonify({
-            "from": from_station, "to": to_station, "path": [from_station],
-            "total_fare": 0.0, "message": "Origin and destination stations are the same."
-        })
+        return jsonify({"from": from_station, "to": to_station, "path": [from_station], "total_fare": 0.0, "message": "Origin and destination are the same."})
 
     if from_station not in network_graph or to_station not in network_graph:
         return jsonify({"error": "One or both stations not found in the network"}), 404
 
-    queue = deque([(from_station, [from_station])])
+    # --- BFS Pathfinding Algorithm ---
+    queue = deque([(from_station, [from_station])]) # Each item is (current_node, path_to_this_node)
     visited = {from_station}
 
     while queue:
