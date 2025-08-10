@@ -23,8 +23,13 @@ def handle_disconnect():
 # This handler will be triggered by the data_generator.py script.
 @socketio.on('train_update')
 def handle_train_update(data):
+    """
+    Receives a train update from the data generator and
+    broadcasts it to all connected web clients.
+    """
     print(f"Received train update from generator: {data}")
-    # 'emit' with 'broadcast=True' sends the message to ALL connected clients.
-    # We use a different event name ('new_train_position') to distinguish
-    # it from the incoming event.
-    socketio.emit('new_train_position', data, broadcast=True)
+    # By default, socketio.emit() from the server sends to all clients (broadcasts).
+    # The 'broadcast=True' argument is used inside a request context to override
+    # the default behavior of sending only to the originating client.
+    # The TypeError indicates our library version prefers the simpler call.
+    socketio.emit('new_train_position', data) # <-- REMOVE broadcast=True

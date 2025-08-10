@@ -1,53 +1,54 @@
-import sqlite3
+# data_generator.py (The final version you are implementing)
+
 import time
 import random
+import socketio
+
+# --- 1. Client Setup ---
+# Create a new Socket.IO client instance. This client will connect to our main Flask server.
+sio = socketio.Client()
+
+try:
+    # Attempt to establish a connection to the server.
+    sio.connect('http://localhost:5000')
+except socketio.exceptions.ConnectionError:
+    print("Connection failed: Please ensure the main Flask server (app.py) is running.")
+    exit()
 
 
-conn = sqlite3.connect('db.sqlite')
-cursor = conn.cursor()
-
-def fetch_data():
+# --- 2. Simulation Logic ---
+def simulate_train_movement():
+    """Simulates a train moving along a predefined route and emits its position."""
+    train_id = f"Train-{random.randint(1000, 9999)}"
+    # This route simulates a train moving sequentially through stations.
+    route = ["Kajang", "Stadium Kajang", "Sungai Jernih", "Batu 11 Cheras", "Bukit Dukung", "Taman Connaught", "Taman Mutiara", "Taman Midah"]
     
-    # Join fare_matrix and station to retrieve the exact matching route for origin-destination
-    query = '''
-        SELECT 
-            fare_matrix.fare_id, 
-            fare_matrix.station_name, 
-            fare_matrix.destination_name,
-            station.route,
-            fare_matrix.price
-        FROM fare_matrix
-        JOIN station 
-        ON fare_matrix.station_name = station.station_name
-        AND fare_matrix.destination_name = station.destination_name
-    '''
-    cursor.execute(query)
-    rows = cursor.fetchall()
-    return rows
+    print(f"--- Starting Live Data Simulation for {train_id} ---")
+    
+    while True:
+        # Loop through the route to simulate movement.
+        for station in route:
+            # This is the correct data structure the project requires.
+            update_data = {
+                'train_id': train_id,
+                'current_station': station,
+                'timestamp': time.time()
+            }
 
-def simulate_live_updates():
-    try:
-        print("Starting live train fare updates...\n")
-        print("Live Update:")
-        print("-" * 20)
-        while True:
-            data = fetch_data()
-            sample = random.sample(data, min(1, len(data)))  # Random 1 entries 
+            # Publish the update to the server via the 'train_update' event.
+            sio.emit('train_update', update_data)
+            print(f"Sent update: {train_id} is now at {station}")
+            time.sleep(4) # Wait 4 seconds before the "train" moves to the next station
 
-            
-            for row in sample:
-                fare_id, station, destination, route, price = row
-                print(f"ID: {fare_id} ")
-                print(f"From: {station} -> To: {destination}")
-                print(f"Route: {route}")
-                print(f"Price: RM {price:.2f}")
-            print("-" * 80)
-            time.sleep(5) 
 
-    except KeyboardInterrupt:
-        print("\nStopped live updates.")
-    finally:
-        conn.close()
-
+# --- 3. Main Execution Block ---
 if __name__ == "__main__":
-    simulate_live_updates()
+    try:
+        simulate_train_movement()
+    except KeyboardInterrupt:
+        print("\nSimulation stopped by user.")
+    finally:
+        # Cleanly disconnect from the server when the script is stopped.
+        if sio.connected:
+            sio.disconnect()
+        print("Disconnected from server.")
