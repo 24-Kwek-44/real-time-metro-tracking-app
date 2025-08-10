@@ -1,23 +1,26 @@
 from flask import Flask, render_template
 from routes import api, build_network_graph
 from realtime import socketio
+from config import SERVER_PORT  # <-- ADD THIS IMPORT
 
 # --- Application Setup ---
 
-# Build the in-memory station network graph upon application startup.
+# 1. Build the in-memory station network graph upon application startup.
+# This pre-computation is a key performance optimization for the routing API.
 build_network_graph()
 
-# Create the main Flask application instance.
+# 2. Create the main Flask application instance.
 app = Flask(__name__)
 
-# Register the API blueprint. All API routes will be prefixed with /api.
+# 3. Register the API blueprint. All API routes will be prefixed with /api.
 app.register_blueprint(api, url_prefix='/api')
 
-# Initialize the Socket.IO server with the Flask app.
+# 4. Initialize the Socket.IO server with the Flask app.
 socketio.init_app(app)
 
 
 # --- Route Definitions ---
+
 @app.route('/')
 def index():
     """Serves the main HTML file for the single-page application kiosk."""
@@ -25,6 +28,9 @@ def index():
 
 
 # --- Main Execution ---
+
 if __name__ == '__main__':
     # Use socketio.run() to start a server that supports both standard HTTP and WebSockets.
-    socketio.run(app, debug=True, port=5000)
+    # The port is now managed in the central config.py file.
+    print(f"--- Starting Flask-SocketIO server on http://127.0.0.1:{SERVER_PORT} ---")
+    socketio.run(app, debug=True, port=SERVER_PORT)  # <-- USE THE IMPORTED VARIABLE

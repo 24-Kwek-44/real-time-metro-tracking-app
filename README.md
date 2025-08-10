@@ -1,6 +1,6 @@
 # Real-Time Metro Tracking Application
 
-This is the group project for UEEN3123/UEEN3433, building a real-time metro tracking app using Flask, SQLite, and WebSockets.
+This is the group project for UEEN3123/UEEN3433, building a real-time metro tracking and routing application using Flask, SQLite, and WebSockets.
 
 ## Project Setup & Running Instructions
 
@@ -15,49 +15,50 @@ Follow these steps to get the project set up locally.
     ```
 
 2.  **Set up a Virtual Environment (Recommended):**
+    This creates an isolated environment for the project's dependencies.
     ```bash
-    # On macOS/Linux
-    python3 -m venv venv
-    source venv/bin/activate
-
     # On Windows
     python -m venv venv
     venv\Scripts\activate
+    
+    # On macOS/Linux
+    python3 -m venv venv
+    source venv/bin/activate
     ```
 
 3.  **Install Dependencies:**
+    Install all required Python libraries from the requirements file.
     ```bash
     pip install -r requirements.txt
     ```
 
 4.  **Download and Place the Dataset:**
-    The dataset is not tracked by Git. Please download the required CSV files from the official source:
-    *   **[Kaggle: MyRapidKL Train Dataset](https://www.kaggle.com/datasets/niknmarjan/myrapidkl-train-dataset)**
-    
-    After downloading, place the `Fare.csv` and `Route.csv` files into the `data/` folder in the project's root directory.
+    The project's dataset is not tracked by Git.
+    *   Download the required CSV files from: **[Kaggle: MyRapidKL Train Dataset](https://www.kaggle.com/datasets/niknmarjan/myrapidkl-train-dataset)**
+    *   After downloading, place the `Fare.csv` and `Route.csv` files into the `data/` folder in the project's root directory.
 
 5.  **Initialize the Database:**
-    Run the `database.py` script once to create and populate the `db.sqlite` file.
+    Run the `database.py` script once to create the `db.sqlite` file and populate it with data from the CSVs.
     ```bash
     python database.py
     ```
 
 ### 2. Running the Application
 
-The application requires two separate processes to be running concurrently.
+The application requires two separate processes to be running concurrently in two different terminal windows.
 
 1.  **Start the Main Flask Server:**
     This server runs the backend API and the WebSocket hub.
     ```bash
+    # In Terminal 1
     python app.py
     ```
     The server will be running on `http://127.0.0.1:5000`.
 
 2.  **Start the Data Generator:**
-    In a **new, separate terminal window**, activate the virtual environment again and start the data generator. This will simulate and publish live train data to the main server.
+    This script simulates and publishes live train data to the main server.
     ```bash
-    # (In a new terminal)
-    # venv\Scripts\activate
+    # In Terminal 2 (make sure venv is active)
     python data_generator.py
     ```
 
@@ -68,70 +69,74 @@ The application requires two separate processes to be running concurrently.
 
 ## Backend API Documentation
 
-The backend server provides a set of RESTful API endpoints to interact with the metro system data. All API routes are prefixed with `/api`.
+The backend provides RESTful API endpoints for request-response interactions. All routes are prefixed with `/api`.
 
-### 1. Get All Stations
-
-Returns a list of all unique station names in the system.
-
-*   **URL:** `/stations`
-*   **Method:** `GET`
-*   **Success Response (Code 200 OK):**
+### 1. GET /stations
+Returns a list of all unique station names.
+*   **Success Response (200 OK):**
     ```json
-    [
-        { "name": "Abdullah Hukum" },
-        { "name": "Alam Megah" },
-        { "name": "Ampang Park" },
-        ...
-    ]
+    [{"name": "Abdullah Hukum"}, {"name": "Alam Megah"}, ...]
     ```
 
-### 2. Get Fare Between Two Stations
+### 2. GET /fare
+Returns the direct fare between two stations.
+*   **Query Params:** `from` (string), `to` (string)
+*   **Example:** `/api/fare?from=Kajang&to=Muzium Negara`
+*   **Success Response (200 OK):**
+    ```json
+    {"from": "Kajang", "price": 3.3, "to": "Muzium Negara"}
+    ```
 
-Returns the direct fare for a single travel segment between two stations.
-
-*   **URL:** `/fare`
-*   **Method:** `GET`
-*   **Query Parameters:**
-    *   `from` (string, required): The name of the origin station.
-    *   `to` (string, required): The name of the destination station.
-*   **Example URL:** `/api/fare?from=Kajang&to=Muzium Negara`
-*   **Success Response (Code 200 OK):**
+### 3. GET /route
+Calculates the shortest path (by number of stops) and total fare between two stations.
+*   **Query Params:** `from` (string), `to` (string)
+*   **Example:** `/api/route?from=Kajang&to=Batu+11+Cheras`
+*   **Success Response (200 OK):**
     ```json
     {
       "from": "Kajang",
-      "price": 3.3,
-      "to": "Muzium Negara"
-    }
-    ```
-*   **Error Responses:**
-    *   `404 Not Found`: If the specific fare is not in the database.
-    *   `400 Bad Request`: If `from` or `to` parameters are missing.
-
-### 3. Get Route Between Two Stations
-
-Calculates and returns the shortest path (by number of stops) and the total fare between two stations.
-
-*   **URL:** `/route`
-*   **Method:** `GET`
-*   **Query Parameters:**
-    *   `from` (string, required): The name of the origin station.
-    *   `to` (string, required): The name of the destination station.
-*   **Example URL:** `/api/route?from=Kajang&to=Batu+11+Cheras`
-*   **Success Response (Code 200 OK):**
-    ```json
-    {
-      "from": "Kajang",
-      "path": [
-        "Kajang",
-        "Stadium Kajang",
-        "Sungai Jernih",
-        "Batu 11 Cheras"
-      ],
+      "path": ["Kajang", "Stadium Kajang", "Sungai Jernih", "Batu 11 Cheras"],
       "to": "Batu 11 Cheras",
       "total_fare": 2.5
     }
     ```
-*   **Error Responses:**
-    *   `404 Not Found`: If no path exists or a station is not in the network.
-    *   `400 Bad Request`: If `from` or `to` parameters are missing.
+---
+
+## Real-Time WebSocket Events
+
+The server uses WebSockets to push live updates to all connected clients. The frontend client should listen for the following events using `socket.on()`.
+
+### Event: `new_train_position`
+
+This is the primary event for live data. It is broadcast by the server every few seconds with the updated position of a simulated train.
+
+*   **Direction:** Server → Client
+*   **Purpose:** To provide the live location of a train for map animation.
+*   **Data Payload:** A JSON object with the following structure:
+    ```json
+    {
+      "train_id": "Train-1234",
+      "current_station": "Kajang",
+      "timestamp": 1662783451.123
+    }
+    ```
+*   **Client-Side Usage Example:**
+    ```javascript
+    socket.on('new_train_position', (data) => {
+        console.log(`Train ${data.train_id} is at station ${data.current_station}`);
+        // Logic to find and update a marker on the Leaflet map would go here.
+    });
+    ```
+
+### Event: `welcome_message`
+
+A message sent once to a client immediately after it successfully connects.
+
+*   **Direction:** Server → Client
+*   **Purpose:** To confirm that the WebSocket connection has been established successfully.
+*   **Data Payload:**
+    ```json
+    {
+        "data": "Welcome to the real-time server!"
+    }
+    ```
