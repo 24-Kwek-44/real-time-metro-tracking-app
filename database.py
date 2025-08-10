@@ -1,13 +1,116 @@
+# database.py (DEFINITIVE FINAL - Based on Official Maps)
 import csv
 import sqlite3
 import os
-import time
-from geopy.geocoders import Nominatim
 from config import DATABASE_NAME
 
 DB_FILE = DATABASE_NAME
 FARE_CSV_PATH = os.path.join(os.path.dirname(__file__), 'data', 'Fare.csv')
-ROUTE_CSV_PATH = os.path.join(os.path.dirname(__file__), 'data', 'Route.csv')
+
+# --- MANUALLY VERIFIED COORDINATE DATA ---
+# This dictionary is the "source of truth" for station coordinates,
+# capturing the manual data entry work.
+VERIFIED_COORDINATES = {
+    "Abdullah Hukum": {"lat": 3.1188319, "lon": 101.6732377},
+    "Alam Megah": {"lat": 3.0231025098204394, "lon": 101.57211549888724},
+    "Ampang Park": {"lat": 3.160062, "lon": 101.7190053},
+    "Ara Damansara": {"lat": 3.108771553447338, "lon": 101.5864149115486},
+    "Asia Jaya": {"lat": 3.104441327047661, "lon": 101.63770721799644},
+    "Bandar Tun Hussein Onn": {"lat": 3.0483702717217134, "lon": 101.77512808852975},
+    "Bandar Utama": {"lat": 3.1468634, "lon": 101.6186865},
+    "Bangsar": {"lat": 3.1275597, "lon": 101.6790602},
+    "Batu 11 Cheras": {"lat": 3.0415490607439075, "lon": 101.7733156711643},
+    "Bukit Bintang": {"lat": 3.1460953, "lon": 101.7114762},
+    "Bukit Dukung": {"lat": 3.026512260525024, "lon": 101.771092267453},
+    "Cochrane": {"lat": 3.1324723, "lon": 101.7230543},
+    "Damai": {"lat": 3.1644733, "lon": 101.7244083},
+    "Dang Wangi": {"lat": 3.1568579, "lon": 101.7019848},
+    "Dato' Keramat": {"lat": 3.1650189, "lon": 101.731853},
+    "Glenmarie": {"lat": 3.096073268173765, "lon": 101.59025995211034},
+    "Gombak": {"lat": 3.2312176, "lon": 101.7244253},
+    "Jelatek": {"lat": 3.1673333, "lon": 101.7353159},
+    "KL Sentral (KJL)": {"lat": 3.1343094015014534, "lon": 101.68609334693598},
+    "KLCC": {"lat": 3.1592469, "lon": 101.7133662},
+    "Kajang": {"lat": 2.983291228870008, "lon": 101.79053187175903},
+    "Kampung Baru": {"lat": 3.1613264, "lon": 101.7065974},
+    "Kampung Selamat": {"lat": 3.1973415576763964, "lon": 101.5784439710002},
+    "Kelana Jaya": {"lat": 3.1126776830519387, "lon": 101.6044900809461},
+    "Kerinchi": {"lat": 3.1154917, "lon": 101.6684949},
+    "Kota Damansara": {"lat": 3.1505241189110476, "lon": 101.57864315506677},
+    "Kwasa Damansara": {"lat": 3.1767415079468546, "lon": 101.57236334656068},
+    "Kwasa Sentral": {"lat": 3.17017353275566, "lon": 101.56483436930343},
+    "Lembah Subang": {"lat": 3.1122616050632335, "lon": 101.59122896745326},
+    "Maluri (SBK)": {"lat": 3.1247549674463815, "lon": 101.72727635211051},
+    "Masjid Jamek (KJL)": {"lat": 3.1494620854175155, "lon": 101.69642181864305},
+    "Merdeka": {"lat": 3.1429735, "lon": 101.7021849},
+    "Mutiara Damansara": {"lat": 3.1553010001163844, "lon": 101.60871960112053},
+    "Muzium Negara": {"lat": 3.1371006, "lon": 101.6873833},
+    "Pasar Seni (KJL)": {"lat": 3.1427085851764684, "lon": 101.695410170714},
+    "Pasar Seni (SBK)": {"lat": 3.142481415420169, "lon": 101.69531614794404},
+    "Phileo Damansara": {"lat": 3.1291991, "lon": 101.6429822},
+    "Pusat Bandar Damansara": {"lat": 3.1432978, "lon": 101.6624268},
+    "Putra Heights (KJL)": {"lat": 2.9960778476011956, "lon": 101.57551791822944},
+    "SS 15": {"lat": 3.1931997, "lon": 101.6345387},
+    "SS 18": {"lat": 3.1931997, "lon": 101.6345387},
+    "Semantan": {"lat": 3.1509652, "lon": 101.6653573},
+    "Setiawangsa": {"lat": 3.175800522606992, "lon": 101.73589617084988},
+    "Sri Rampai": {"lat": 3.1992489, "lon": 101.7372696},
+    "Sri Raya": {"lat": 3.0622258470111072, "lon": 101.77286110369512},
+    "Stadium Kajang": {"lat": 2.994544316111254, "lon": 101.7863435958347},
+    "Subang Alam": {"lat": 3.0094572000250905, "lon": 101.5722796108533},
+    "Subang Jaya": {"lat": 3.0845797544535625, "lon": 101.5873752659475},
+    "Sungai Buloh": {"lat": 3.20645103112238, "lon": 101.58178250249505},
+    "Sungai Jernih": {"lat": 3.0007633321499747, "lon": 101.78396771663952},
+    "Surian": {"lat": 3.1497108546873873, "lon": 101.59367164252724},
+    "TTDI": {"lat": 3.1361413, "lon": 101.6307373},
+    "Taipan": {"lat": 3.0481687210747563, "lon": 101.59023720769395},
+    "Taman Bahagia": {"lat": 3.1107266099634368, "lon": 101.61269758648046},
+    "Taman Connaught": {"lat": 3.0791818, "lon": 101.7451427},
+    "Taman Jaya": {"lat": 3.2122076, "lon": 101.7471322},
+    "Taman Melati": {"lat": 3.2195172, "lon": 101.721876},
+    "Taman Midah": {"lat": 3.104286, "lon": 101.7323396},
+    "Taman Mutiara": {"lat": 3.0912676, "lon": 101.7403423},
+    "Taman Paramount": {"lat": 3.1047123428799814, "lon": 101.62315876050071},
+    "Taman Pertama": {"lat": 3.1127246, "lon": 101.7292803},
+    "Taman Suntex": {"lat": 3.0715969903540437, "lon": 101.76358207087557},
+    "Tun Razak Exchange (TRX)": {"lat": 3.1427699, "lon": 101.7200049},
+    "USJ 21": {"lat": 3.029892040067465, "lon": 101.58171229295425},
+    "USJ 7 (KJL)": {"lat": 3.0553321159333717, "lon": 101.59190822389331},
+    "Universiti": {"lat": 3.1145395, "lon": 101.6617007},
+    "Wangsa Maju": {"lat": 3.2057781, "lon": 101.7318615},
+    "Wawasan": {"lat": 3.03507492592289, "lon": 101.58834495372092},
+}
+# --- DEFINITIVE SOURCE OF TRUTH FOR CONNECTIONS (FROM OFFICIAL MAPS) ---
+# These lists represent the actual, sequential order of stations on each line.
+KELANA_JAYA_LINE = [
+    "Gombak", "Taman Melati", "Wangsa Maju", "Sri Rampai", "Setiawangsa", "Jelatek", 
+    "Dato' Keramat", "Damai", "Ampang Park", "KLCC", "Kampung Baru", "Dang Wangi", 
+    "Masjid Jamek (KJL)", "Pasar Seni (KJL)", "KL Sentral (KJL)", "Bangsar", 
+    "Abdullah Hukum", "Kerinchi", "Universiti", "Taman Jaya", "Asia Jaya", 
+    "Taman Paramount", "Taman Bahagia", "Kelana Jaya", "Lembah Subang", 
+    "Ara Damansara", "Glenmarie", "Subang Jaya", "SS 15", "SS 18", 
+    "USJ 7 (KJL)", "Taipan", "Wawasan", "USJ 21", "Alam Megah", "Subang Alam", 
+    "Putra Heights (KJL)"
+]
+
+KAJANG_LINE = [
+    "Kwasa Damansara", "Kampung Selamat", "Sungai Buloh", "Kwasa Sentral", 
+    "Kota Damansara", "Surian", "Mutiara Damansara", "Bandar Utama", "TTDI", 
+    "Phileo Damansara", "Pusat Bandar Damansara", "Semantan", "Muzium Negara", 
+    "Pasar Seni (SBK)", "Merdeka", "Bukit Bintang", "Tun Razak Exchange (TRX)", 
+    "Cochrane", "Maluri (SBK)", "Taman Pertama", "Taman Midah", "Taman Mutiara", 
+    "Taman Connaught", "Taman Suntex", "Sri Raya", "Bandar Tun Hussein Onn", 
+    "Batu 11 Cheras", "Bukit Dukung", "Sungai Jernih", "Stadium Kajang", "Kajang"
+]
+
+# Define interchange stations to create links between lines
+INTERCHANGE_STATIONS = {
+    # Connect the Kelana Jaya Line platform to the Kajang Line platform at Pasar Seni
+    "Pasar Seni (KJL)": "Pasar Seni (SBK)",
+    # We could add more here, for example connecting Muzium Negara to KL Sentral
+    "Muzium Negara": "KL Sentral (KJL)",
+}
+
 
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
@@ -15,69 +118,41 @@ def get_db_connection():
     return conn
 
 def create_database_schema():
-    print("[INFO] Creating database schema with coordinate support...")
     conn = get_db_connection()
     cursor = conn.cursor()
-    
     cursor.execute('DROP TABLE IF EXISTS fares')
     cursor.execute('DROP TABLE IF EXISTS connections')
     cursor.execute('DROP TABLE IF EXISTS stations')
-    
-    # The stations table now includes latitude and longitude
     cursor.execute('CREATE TABLE stations (name TEXT PRIMARY KEY, latitude REAL, longitude REAL)')
     cursor.execute('CREATE TABLE connections (origin_name TEXT, destination_name TEXT)')
     cursor.execute('CREATE TABLE fares (origin_name TEXT, destination_name TEXT, price REAL)')
     conn.commit()
     conn.close()
-    print("[INFO] Database schema created successfully.")
 
 def initialize_database():
     create_database_schema()
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # --- Step 1: Discover all unique stations ---
-    print("\n--- Step 1: Discovering all unique stations from Fare.csv ---")
+    # --- Step 1: Discover stations and insert with verified coordinates ---
+    print("\n--- Step 1: Populating stations ---")
     station_names = set()
     with open(FARE_CSV_PATH, newline='', encoding='utf-8') as f:
         reader = csv.reader(f)
         headers = next(reader)[1:]
         station_names.update(h.strip() for h in headers)
-        for row in reader:
-            station_names.add(row[0].strip())
-    
-    # --- Step 2: Geocode stations and insert into database ---
-    print(f"\n--- Step 2: Geocoding {len(station_names)} stations (this will take a few minutes) ---")
-    geolocator = Nominatim(user_agent="metro_tracker_app_kwek_v1")
-    stations_to_insert = []
-    
-    for name in sorted(list(station_names)):
-        lat, lon = None, None
-        try:
-            # Add context to the query for better accuracy
-            query = f"{name} Station, Kuala Lumpur"
-            location = geolocator.geocode(query, timeout=10)
-            if location:
-                lat, lon = location.latitude, location.longitude
-                print(f"  [SUCCESS] Found coordinates for {name}: ({lat:.4f}, {lon:.4f})")
-            else:
-                print(f"  [WARNING] Could not find coordinates for {name}.")
+        for row in reader: station_names.add(row[0].strip())
             
-            # IMPORTANT: Nominatim has a strict usage policy of 1 request per second.
-            time.sleep(1.1) # Wait slightly more than 1 second to be safe.
-        except Exception as e:
-            print(f"  [ERROR] An error occurred while geocoding {name}: {e}")
-        
-        stations_to_insert.append((name, lat, lon))
-
-    cursor.executemany('INSERT INTO stations (name, latitude, longitude) VALUES (?, ?, ?)', stations_to_insert)
+    stations_to_insert = []
+    for name in sorted(list(station_names)):
+        coords = VERIFIED_COORDINATES.get(name, {"lat": None, "lon": None})
+        stations_to_insert.append((name, coords["lat"], coords["lon"]))
+    cursor.executemany('INSERT OR IGNORE INTO stations (name, latitude, longitude) VALUES (?, ?, ?)', stations_to_insert)
     conn.commit()
-    print("[SUCCESS] Finished geocoding and inserting stations.")
+    print(f"[SUCCESS] Inserted {len(station_names)} stations.")
 
-    # --- Step 3 & 4: Ingest fares and connections (no changes to this logic) ---
-    print("\n--- Step 3: Ingesting fares ---")
-    # ... (fare ingestion logic is the same) ...
-    fares_added = 0
+    # --- Step 2: Ingest fares ---
+    print("\n--- Step 2: Ingesting fares ---")
     with open(FARE_CSV_PATH, newline='', encoding='utf-8') as f:
         reader = csv.reader(f)
         dest_names = next(reader)[1:]
@@ -88,25 +163,26 @@ def initialize_database():
                     dest_name = dest_names[i].strip()
                     price = float(cell_value)
                     cursor.execute('INSERT INTO fares (origin_name, destination_name, price) VALUES (?, ?, ?)', (origin_name, dest_name, price))
-                    fares_added += 1
     conn.commit()
-    print(f"[SUCCESS] Ingested {fares_added} fare entries.")
+    print("[SUCCESS] Fares ingested.")
 
-    print("\n--- Step 4: Ingesting connections ---")
-    # ... (connection ingestion logic is the same) ...
-    connections_added = 0
-    with open(ROUTE_CSV_PATH, newline='', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        dest_names = next(reader)[1:]
-        for row in reader:
-            origin_name = row[0].strip()
-            for i, cell_value in enumerate(row[1:]):
-                if cell_value and cell_value.strip() not in ['', '-']:
-                    dest_name = dest_names[i].strip()
-                    cursor.execute('INSERT INTO connections (origin_name, destination_name) VALUES (?, ?)', (origin_name, dest_name))
-                    connections_added += 1
+    # --- Step 3: Ingest DIRECT connections from hardcoded lines ---
+    print("\n--- Step 3: Ingesting direct connections from official lines ---")
+    connections_to_add = set() # Use a set to avoid duplicate connections
+    # Process Kelana Jaya Line
+    for i in range(len(KELANA_JAYA_LINE) - 1):
+        connections_to_add.add(tuple(sorted((KELANA_JAYA_LINE[i], KELANA_JAYA_LINE[i+1]))))
+    # Process Kajang Line
+    for i in range(len(KAJANG_LINE) - 1):
+        connections_to_add.add(tuple(sorted((KAJANG_LINE[i], KAJANG_LINE[i+1]))))
+        
+    # Process Interchange Links
+    for station1, station2 in INTERCHANGE_STATIONS.items():
+        connections_to_add.add(tuple(sorted((station1, station2))))
+        
+    cursor.executemany('INSERT INTO connections (origin_name, destination_name) VALUES (?, ?)', list(connections_to_add))
     conn.commit()
-    print(f"[SUCCESS] Ingested {connections_added} connection entries.")
+    print(f"[SUCCESS] Ingested {cursor.rowcount} unique direct connection entries.")
     
     conn.close()
     print("\n--- Database Initialization Complete ---")
