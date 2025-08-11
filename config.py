@@ -13,4 +13,4 @@ SERVER_PORT = 5000
 
 # --- Real-Time Simulation Configuration ---
 # The time in seconds that the data generator waits before sending a new update.
-SIMULATION_INTERVAL_SECONDS = 4
+SIMULATION_INTERVAL_SECONDS = 5

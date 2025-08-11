@@ -38,17 +38,9 @@ def handle_disconnect():
 @socketio.on('train_update')
 def handle_train_update(data):
     """
-    Receives a 'train_update' event from the data_generator client.
-
-    This function acts as the entry point for live data into the system.
-    It then broadcasts this data to all connected frontend (browser) clients
-    on the 'new_train_position' event.
-
-    Args:
-        data (dict): A dictionary containing the train update information.
-                     Example: {'train_id': 'T-1234', 'current_station': 'Kajang'}
+    Receives updates from the data generator and broadcasts to all clients.
     """
     print(f"Received train update: {data}")
-    # 'socketio.emit' with 'broadcast=True' sends the message to ALL connected clients.
-    # This is the core of the "publish-subscribe" model for our live tracking.
-    socketio.emit('new_train_position', data, broadcast=True)
+    # For some library versions, broadcast=True is implicit when emitting
+    # from the main socketio object. Removing the argument fixes the TypeError.
+    socketio.emit('new_train_position', data)

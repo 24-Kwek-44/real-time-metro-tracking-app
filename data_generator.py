@@ -49,25 +49,30 @@ def build_network_graph_for_generator():
 
 def generate_random_route(graph, length=12):
     """
-    Generates a realistic route by performing a random walk on the station network graph.
-    
-    Args:
-        graph (dict): The network graph to traverse.
-        length (int): The desired number of stops in the generated route.
-    
-    Returns:
-        list: A list of station names representing the simulated route.
+    Generates a more realistic route by performing a random walk on the graph,
+    avoiding immediate reversals.
     """
     if not graph: return []
     start_station = random.choice(list(graph.keys()))
     route = [start_station]
     current_station = start_station
+    
     for _ in range(length - 1):
-        neighbors = graph.get(current_station)
-        if not neighbors: break # Stop if the current station is a dead end.
-        next_station = random.choice(neighbors)
+        neighbors = graph.get(current_station, [])
+        # Create a list of possible next stations, excluding the one we just came from.
+        possible_next = [n for n in neighbors if n != (route[-2] if len(route) > 1 else None)]
+        
+        if not possible_next:
+            # If we hit a dead end (or can only go back), we'll just go back.
+            possible_next = neighbors
+
+        if not possible_next:
+            break # Truly a dead end, stop generating.
+
+        next_station = random.choice(possible_next)
         route.append(next_station)
         current_station = next_station
+        
     return route
 
 # --- 3. Main Simulation Logic ---
