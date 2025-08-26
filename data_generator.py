@@ -1,73 +1,95 @@
-# data_generator.py (FINAL PANDAS-ERA VERSION)
+# data_generator.py (FINAL - USER-DRIVEN SIMULATION)
 """
-A standalone client script that simulates and publishes live train position data.
-It uses the hardcoded line sequences from the config file to generate realistic routes.
+A standalone client script that simulates train movement based on instructions
+received from the main server.
+
+This script:
+1. Connects to the Flask-SocketIO server.
+2. Enters a passive state, waiting for a 'new_route_to_simulate' event.
+3. When it receives a route, it simulates a train moving along that specific path.
+4. After the simulation is complete, it returns to the waiting state.
 """
 import time
 import random
 import socketio
-from config import SIMULATION_INTERVAL_SECONDS, KAJANG_LINE, KELANA_JAYA_LINE
+from config import SIMULATION_INTERVAL_SECONDS
 
+# This global variable will be updated by the WebSocket event handler
+# It holds the specific path that the server has instructed us to simulate.
+current_simulation_path = None
+
+# --- 1. WebSocket Client Setup ---
 sio = socketio.Client()
-try:
-    sio.connect('http://localhost:5000')
-except socketio.exceptions.ConnectionError:
-    print(f"[FATAL ERROR] Connection failed. Is the main Flask server (app.py) running?")
-    exit()
 
-def generate_random_route(length=12):
-    """
-    Generates a realistic route by picking a line and a random segment from it.
-    
-    Args:
-        length (int): The desired number of stops in the simulated route.
-    
-    Returns:
-        list: A list of station names for the simulation.
-    """
+# --- 2. Define Event Handlers for This Client ---
+@sio.event
+def connect():
+    """Handler for a successful connection to the server."""
+    print("Connection to server established. Waiting for a route to simulate...")
 
-    # Choose one of the major lines to simulate a train on
-    line_to_simulate = random.choice([KAJANG_LINE, KELANA_JAYA_LINE])
-    
-    if len(line_to_simulate) <= length:
-        return line_to_simulate # Return the whole line if it's short
-        
-    # Pick a random starting point for the segment
-    start_index = random.randint(0, len(line_to_simulate) - length)
-    return line_to_simulate[start_index : start_index + length]
+@sio.event
+def disconnect():
+    """Handler for disconnection from the server."""
+    print("Disconnected from server.")
 
-def simulate_train_movement():
+@sio.on('new_route_to_simulate')
+def on_new_route(data):
     """
-    The main simulation loop. Generates a random train and route, then
-    periodically emits position updates to the server.
+    Receives a new route from the server to start simulating.
+    This is the most important handler in this script.
     """
-    train_id = f"Train-{random.randint(1000, 9999)}"
-    route = generate_random_route()
-    
-    if not route:
-        print("[ERROR] Could not generate a route. Exiting.")
-        return
-    
-    print(f"\n--- Starting simulation for {train_id} on route: {route} ---")
+    global current_simulation_path
+    path = data.get('path')
+    if path and isinstance(path, list):
+        print(f"\n[RECEIVED INSTRUCTION] New route to simulate: {path}")
+        current_simulation_path = path
+    else:
+        print(f"[WARNING] Received invalid route data: {data}")
+
+# --- 3. Main Simulation Logic ---
+def run_simulation():
+    """
+    The main simulation loop. It continuously checks if there is a route
+    to simulate and executes the simulation when one is received.
+    """
+    global current_simulation_path
+    train_id_counter = 1000
+
     while True:
-        # Loop through the route to simulate the train's journey
-        for station in route:
-            update_data = {'train_id': train_id, 'current_station': station}
-            sio.emit('train_update', update_data)
-            print(f"Sent update: {train_id} is now at {station}")
-            time.sleep(SIMULATION_INTERVAL_SECONDS)
+        if current_simulation_path:
+            # A new route has been received, start the simulation
+            train_id = f"Train-{train_id_counter}"
+            train_id_counter += 1
             
-        # When the train reaches the end, it reverses for the return journey
-        route.reverse()
-        print(f"--- Train {train_id} reversing direction ---")
+            print(f"--- Starting simulation for {train_id} on route: {current_simulation_path} ---")
+            
+            # Loop through the assigned route
+            for station in current_simulation_path:
+                update_data = {'train_id': train_id, 'current_station': station}
+                sio.emit('train_update', update_data)
+                print(f"  Sent update: {train_id} is now at {station}")
+                time.sleep(SIMULATION_INTERVAL_SECONDS)
+            
+            print(f"--- Simulation for {train_id} complete. Train has arrived. ---")
+            
+            # Reset the path to None and return to the waiting state
+            current_simulation_path = None
+            print("\nWaiting for a new route to simulate...")
+        else:
+            # If there's no route, just wait quietly for instructions.
+            time.sleep(1)
 
-
+# --- 4. Main Execution Block ---
 if __name__ == "__main__":
     try:
-        simulate_train_movement()
+        # Attempt to establish the connection. The event handlers are already set up.
+        sio.connect('http://localhost:5000')
+        # Start the main loop
+        run_simulation()
+    except socketio.exceptions.ConnectionError:
+        print(f"[FATAL ERROR] Connection failed. Is the main Flask server (app.py) running?")
     except KeyboardInterrupt:
         print("\nSimulation stopped by user.")
     finally:
         if sio.connected:
             sio.disconnect()
-        print("Disconnected from server.")

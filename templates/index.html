@@ -23,15 +23,23 @@
             --destructive: #ef4444;
         }
 
+        /* --- THIS IS THE CORE OF THE RESPONSIVE SOLUTION --- */
+        html {
+            box-sizing: border-box;
+        }
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             margin: 0;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
+            height: 100vh; /* KEY: Makes the body exactly the height of the viewport. */
+            display: flex; /* KEY: Enables flexbox for layout. */
+            flex-direction: column; /* KEY: Stacks children (header, main-content) vertically. */
             background-color: var(--background);
             color: var(--foreground);
-            overflow: hidden;
+            overflow: hidden; /* KEY: Prevents the whole page from ever showing a scrollbar. */
         }
 
         #header {
@@ -43,22 +51,25 @@
             font-weight: 500;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             z-index: 1000;
+            flex-shrink: 0; /* ADJUSTMENT: Ensures the header never shrinks. */
         }
 
         #main-content {
-            flex-grow: 1;
-            display: flex;
+            flex-grow: 1; /* KEY: This makes this div take up all remaining vertical space. */
+            display: flex; /* KEY: Enables flexbox for its children (map, sidebar). */
+            min-height: 0; /* Prevents flexbox overflow issues in some browsers */
         }
 
         #map {
-            flex-grow: 1;
+            flex-grow: 1; /* KEY: This makes the map take up all remaining horizontal space. */
         }
 
         #sidebar {
             width: 350px;
+            flex-shrink: 0; /* ADJUSTMENT: Ensures the sidebar maintains its 350px width and doesn't shrink. */
             background-color: var(--card);
             border-left: 1px solid var(--border);
-            overflow-y: auto;
+            overflow-y: auto; /* KEY: If content is too tall, a scrollbar appears HERE, not on the page. */
             padding: 1.5rem;
             display: flex;
             flex-direction: column;
@@ -87,97 +98,31 @@
             margin: 0;
         }
         
-        /* --- 3. UI Element Styles --- */
-        .badge {
-            display: inline-block;
-            padding: 0.25em 0.6em;
-            font-size: 0.875rem;
-            font-weight: 600;
-            border-radius: 9999px;
-        }
-        .badge.connected {
-            background-color: var(--success);
-            color: white;
-        }
-        .badge.disconnected {
-            background-color: var(--destructive);
-            color: white;
-        }
-        
-        .separator {
-            border-bottom: 1px solid var(--border);
-            margin: -0.5rem 0;
-        }
-
-        label {
-            font-size: 0.875rem;
-            color: var(--muted-foreground);
-            display: block;
-            margin-bottom: 0.5rem;
-        }
-
-        select {
-            width: 100%;
-            padding: 0.5rem;
-            border: 1px solid var(--border);
-            border-radius: 0.375rem;
-            font-size: 1rem;
-            background-color: white;
-        }
-        
-        button {
-            width: 100%;
-            padding: 0.75rem;
-            font-size: 1rem;
-            font-weight: 500;
-            border-radius: 0.375rem;
-            border: none;
-            cursor: pointer;
-            background-color: var(--primary);
-            color: var(--primary-foreground);
-            transition: opacity 0.2s;
-        }
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
+        /* --- 3. UI Element Styles (No changes needed here) --- */
+        .badge { display: inline-block; padding: 0.25em 0.6em; font-size: 0.875rem; font-weight: 600; border-radius: 9999px; }
+        .badge.connected { background-color: var(--success); color: white; }
+        .badge.disconnected { background-color: var(--destructive); color: white; }
+        .separator { border-bottom: 1px solid var(--border); margin: -0.5rem 0; }
+        label { font-size: 0.875rem; color: var(--muted-foreground); display: block; margin-bottom: 0.5rem; }
+        select { width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: 0.375rem; font-size: 1rem; background-color: white; }
+        button { width: 100%; padding: 0.75rem; font-size: 1rem; font-weight: 500; border-radius: 0.375rem; border: none; cursor: pointer; background-color: var(--primary); color: var(--primary-foreground); transition: opacity 0.2s; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
         .text-sm { font-size: 0.875rem; }
         .text-muted-foreground { color: var(--muted-foreground); }
         .flex-between { display: flex; justify-content: space-between; align-items: center; }
 
-        /* --- 4. Custom Map Marker Styles --- */
-        .station-marker-icon div {
-            background: #3b82f6; /* Blue */
-            border-radius: 50%;
-            width: 12px;
-            height: 12px;
-            border: 2px solid white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-        
-        .train-marker-icon div {
-            background: #ef4444; /* Red */
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 12px;
-            border: 2px solid white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
+        /* --- 4. Custom Map Marker Styles (No changes needed here) --- */
+        .station-marker-icon div { background: #3b82f6; border-radius: 50%; width: 12px; height: 12px; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        .train-marker-icon div { background: #ef4444; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+
     </style>
 </head>
 <body>
+    <!-- Your HTML Body is perfect, no changes needed -->
     <div id="header">Metro Tracking Kiosk</div>
-
     <div id="main-content">
         <div id="map"></div>
         <div id="sidebar">
-            <!-- Real-Time Status Card -->
             <div class="card">
                 <div class="card-header">Real-Time Status</div>
                 <div class="card-content">
@@ -191,10 +136,7 @@
                     </div>
                 </div>
             </div>
-
             <div class="separator"></div>
-
-            <!-- Route Planner Card -->
             <div class="card">
                 <div class="card-header">Route Planner</div>
                 <div class="card-content">
@@ -209,17 +151,14 @@
                     <button id="calculate-route-btn">Calculate Route</button>
                 </div>
             </div>
-
-            <!-- Route Result Card (hidden by default) -->
             <div id="route-result-card" class="card" style="display: none;">
                 <div class="card-header">Your Route</div>
-                <div class="card-content" id="route-result-content">
-                    <!-- Results will be injected here by JavaScript -->
-                </div>
+                <div class="card-content" id="route-result-content"></div>
             </div>
         </div>
     </div>
 
+    <!-- Your JavaScript is perfect, no changes needed -->
     <script>
         // --- 1. Initial Setup ---
         const map = L.map('map').setView([3.1390, 101.6869], 12);
@@ -363,6 +302,14 @@
                 return;
             }
             
+            // --- THIS IS THE NEW FIX ---
+            // Before starting a new calculation, clear all existing train markers from the map.
+            for (const trainId in trainMarkers) {
+                map.removeLayer(trainMarkers[trainId]);
+            }
+            trainMarkers = {}; // Reset the storage object
+            // --- END OF FIX ---
+            
             calculateBtn.textContent = 'Calculating...';
             calculateBtn.disabled = true;
             routeResultCard.style.display = 'none';
@@ -388,10 +335,17 @@
                     `;
                     routeResultContent.innerHTML = resultHTML;
                     routeResultCard.style.display = 'block';
+
+                    // Trigger the new simulation
+                    if (routeData.path && routeData.path.length > 0) {
+                        console.log("Requesting simulation for path:", routeData.path);
+                        socket.emit('start_simulation', { path: routeData.path });
+                    }
                 } else {
                     alert('Error: ' + routeData.error);
                 }
             } catch (error) {
+                console.error("Error calculating route:", error);
                 alert('An error occurred while calculating the route.');
             } finally {
                 calculateBtn.textContent = 'Calculate Route';

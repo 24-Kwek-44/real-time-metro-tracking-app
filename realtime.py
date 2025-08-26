@@ -44,3 +44,19 @@ def handle_train_update(data):
     # For some library versions, broadcast=True is implicit when emitting
     # from the main socketio object. Removing the argument fixes the TypeError.
     socketio.emit('new_train_position', data)
+
+@socketio.on('start_simulation')
+def handle_start_simulation(data):
+    """
+    Triggered by the frontend when a user calculates a route.
+    This event tells the data_generator which route to start simulating.
+    
+    Args:
+        data (dict): Contains the calculated path. 
+                     Example: {'path': ['Kajang', 'Stadium Kajang', ...]}
+    """
+    path = data.get('path')
+    if path:
+        print(f"[SERVER] Received request to simulate route: {path}")
+        # Broadcast this specific route to any connected data_generator clients
+        socketio.emit('new_route_to_simulate', {'path': path})

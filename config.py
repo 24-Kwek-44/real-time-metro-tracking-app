@@ -111,3 +111,5 @@ INTERCHANGE_STATIONS = {
     "Pasar Seni (KJL)": "Pasar Seni (SBK)",
     "Muzium Negara": "KL Sentral (KJL)",
 }
+
+STATIONS_TO_EXCLUDE = {"Sungai Buloh", "Kampung Selamat"}
