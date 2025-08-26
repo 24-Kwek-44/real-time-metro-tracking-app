@@ -9,6 +9,8 @@ dnspython==2.7.0
 eventlet==0.40.2
 Flask==3.1.1
 Flask-SocketIO==5.3.6
+geographiclib==2.0
+geopy==2.4.1
 gevent==25.5.1
 gevent-websocket==0.10.1
 greenlet==3.2.3
@@ -17,12 +19,18 @@ idna==3.10
 itsdangerous==2.2.0
 Jinja2==3.1.6
 MarkupSafe==3.0.2
+numpy==2.3.2
+pandas==2.3.2
 pycparser==2.22
+python-dateutil==2.9.0.post0
 python-engineio==4.12.2
 python-socketio==5.13.0
+pytz==2025.2
 requests==2.32.4
 setuptools==80.9.0
 simple-websocket==1.1.0
+six==1.17.0
+tzdata==2025.2
 urllib3==2.5.0
 websocket-client==1.8.0
 Werkzeug==3.1.3

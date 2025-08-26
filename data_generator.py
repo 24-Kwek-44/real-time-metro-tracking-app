@@ -1,81 +1,40 @@
-# data_generator.py
+# data_generator.py (FINAL PANDAS-ERA VERSION)
 """
 A standalone client script that simulates and publishes live train position data.
-
-This script performs the following functions:
-1. Connects to the main Flask-SocketIO server as a network client.
-2. Reads the station connection data from the database to build a local network map.
-3. Generates a realistic, multi-stop route by performing a random walk on the map.
-4. Continuously emits 'train_update' events to the server, simulating a train's
-   movement along the generated route.
+It uses the hardcoded line sequences from the config file to generate realistic routes.
 """
-
 import time
 import random
 import socketio
-import sqlite3
-from config import SIMULATION_INTERVAL_SECONDS, DATABASE_NAME
-
-# --- 1. WebSocket Client Setup ---
+from config import SIMULATION_INTERVAL_SECONDS, KAJANG_LINE, KELANA_JAYA_LINE
 
 sio = socketio.Client()
-
 try:
-    # Attempt to establish a connection with the main Flask server.
     sio.connect('http://localhost:5000')
 except socketio.exceptions.ConnectionError:
     print(f"[FATAL ERROR] Connection failed. Is the main Flask server (app.py) running?")
     exit()
 
-# --- 2. Helper Functions for Route Generation ---
-
-def get_db_connection():
-    """Establishes a read-only connection to the database."""
-    conn = sqlite3.connect(DATABASE_NAME)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def build_network_graph_for_generator():
-    """Builds a local copy of the station graph for realistic route simulation."""
-    conn = get_db_connection()
-    connections = conn.execute('SELECT origin_name, destination_name FROM connections').fetchall()
-    conn.close()
-    graph = {}
-    for row in connections:
-        origin, dest = row['origin_name'], row['destination_name']
-        graph.setdefault(origin, []).append(dest)
-        graph.setdefault(dest, []).append(origin)
-    return graph
-
-def generate_random_route(graph, length=12):
+def generate_random_route(length=12):
     """
-    Generates a more realistic route by performing a random walk on the graph,
-    avoiding immediate reversals.
-    """
-    if not graph: return []
-    start_station = random.choice(list(graph.keys()))
-    route = [start_station]
-    current_station = start_station
+    Generates a realistic route by picking a line and a random segment from it.
     
-    for _ in range(length - 1):
-        neighbors = graph.get(current_station, [])
-        # Create a list of possible next stations, excluding the one we just came from.
-        possible_next = [n for n in neighbors if n != (route[-2] if len(route) > 1 else None)]
+    Args:
+        length (int): The desired number of stops in the simulated route.
+    
+    Returns:
+        list: A list of station names for the simulation.
+    """
+
+    # Choose one of the major lines to simulate a train on
+    line_to_simulate = random.choice([KAJANG_LINE, KELANA_JAYA_LINE])
+    
+    if len(line_to_simulate) <= length:
+        return line_to_simulate # Return the whole line if it's short
         
-        if not possible_next:
-            # If we hit a dead end (or can only go back), we'll just go back.
-            possible_next = neighbors
-
-        if not possible_next:
-            break # Truly a dead end, stop generating.
-
-        next_station = random.choice(possible_next)
-        route.append(next_station)
-        current_station = next_station
-        
-    return route
-
-# --- 3. Main Simulation Logic ---
+    # Pick a random starting point for the segment
+    start_index = random.randint(0, len(line_to_simulate) - length)
+    return line_to_simulate[start_index : start_index + length]
 
 def simulate_train_movement():
     """
@@ -83,10 +42,7 @@ def simulate_train_movement():
     periodically emits position updates to the server.
     """
     train_id = f"Train-{random.randint(1000, 9999)}"
-    
-    print("Building local network graph for simulation...")
-    station_graph = build_network_graph_for_generator()
-    route = generate_random_route(station_graph)
+    route = generate_random_route()
     
     if not route:
         print("[ERROR] Could not generate a route. Exiting.")
@@ -94,15 +50,17 @@ def simulate_train_movement():
     
     print(f"\n--- Starting simulation for {train_id} on route: {route} ---")
     while True:
-        # Loop through the generated route to simulate the train's journey.
+        # Loop through the route to simulate the train's journey
         for station in route:
             update_data = {'train_id': train_id, 'current_station': station}
-            # Emit the 'train_update' event to the server.
             sio.emit('train_update', update_data)
             print(f"Sent update: {train_id} is now at {station}")
             time.sleep(SIMULATION_INTERVAL_SECONDS)
+            
+        # When the train reaches the end, it reverses for the return journey
+        route.reverse()
+        print(f"--- Train {train_id} reversing direction ---")
 
-# --- 4. Main Execution Block ---
 
 if __name__ == "__main__":
     try:
@@ -110,7 +68,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nSimulation stopped by user.")
     finally:
-        # Ensure a clean disconnection from the server when the script is stopped.
         if sio.connected:
             sio.disconnect()
         print("Disconnected from server.")
