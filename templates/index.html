@@ -210,7 +210,7 @@
                 });
                 trainMarkers[data.train_id] = L.marker(newPosition, { icon: trainIcon }).addTo(map);
             }
-            trainMarkers[data.train_id].bindPopup(`<b>Train ID:</b> ${data.train_id}`);
+            trainMarkers[data.train_id].bindTooltip(`<b>Train ID:</b> ${data.train_id}`);
         });
 
         // --- 5. Station, Line, and Route Logic ---
@@ -241,7 +241,7 @@
                             iconAnchor: [6, 6]
                         });
                         L.marker([station.latitude, station.longitude], { icon: stationIcon })
-                            .addTo(map).bindPopup(`<b>${station.name}</b>`);
+                            .addTo(map).bindTooltip(`<b>${station.name}</b>`);
                     }
                 });
                 
