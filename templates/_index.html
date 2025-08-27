@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metro Tracking Kiosk</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+    <style>
+        /* --- 1. Basic Setup & Layout --- */
+        :root {
+            --background: #ffffff;
+            --foreground: #020817;
+            --card: #ffffff;
+            --card-foreground: #020817;
+            --muted-foreground: #64748b;
+            --primary: #0f172a;
+            --primary-foreground: #f8fafc;
+            --border: #e2e8f0;
+            --success: #16a34a;
+            --destructive: #ef4444;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--background);
+            color: var(--foreground);
+            overflow: hidden;
+        }
+
+        #header {
+            background-color: var(--primary);
+            color: var(--primary-foreground);
+            padding: 1rem;
+            text-align: center;
+            font-size: 1.25rem;
+            font-weight: 500;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+
+        #main-content {
+            flex-grow: 1;
+            display: flex;
+        }
+
+        #map {
+            flex-grow: 1;
+        }
+
+        #sidebar {
+            width: 350px;
+            background-color: var(--card);
+            border-left: 1px solid var(--border);
+            overflow-y: auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        
+        /* --- 2. Card Component Styles --- */
+        .card {
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            background-color: var(--card);
+        }
+        .card-header {
+            padding: 1rem 1.5rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border);
+        }
+        .card-content {
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .card-content p {
+            margin: 0;
+        }
+        
+        /* --- 3. UI Element Styles --- */
+        .badge {
+            display: inline-block;
+            padding: 0.25em 0.6em;
+            font-size: 0.875rem;
+            font-weight: 600;
+            border-radius: 9999px;
+        }
+        .badge.connected {
+            background-color: var(--success);
+            color: white;
+        }
+        .badge.disconnected {
+            background-color: var(--destructive);
+            color: white;
+        }
+        
+        .separator {
+            border-bottom: 1px solid var(--border);
+            margin: -0.5rem 0;
+        }
+
+        label {
+            font-size: 0.875rem;
+            color: var(--muted-foreground);
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+
+        select {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 0.375rem;
+            font-size: 1rem;
+            background-color: white;
+        }
+        
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            font-size: 1rem;
+            font-weight: 500;
+            border-radius: 0.375rem;
+            border: none;
+            cursor: pointer;
+            background-color: var(--primary);
+            color: var(--primary-foreground);
+            transition: opacity 0.2s;
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .text-sm { font-size: 0.875rem; }
+        .text-muted-foreground { color: var(--muted-foreground); }
+        .flex-between { display: flex; justify-content: space-between; align-items: center; }
+
+        /* --- 4. Custom Map Marker Styles --- */
+        .station-marker-icon div {
+            background: #3b82f6; /* Blue */
+            border-radius: 50%;
+            width: 12px;
+            height: 12px;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .train-marker-icon div {
+            background: #ef4444; /* Red */
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <div id="header">Metro Tracking Kiosk</div>
+
+    <div id="main-content">
+        <div id="map"></div>
+        <div id="sidebar">
+            <!-- Real-Time Status Card -->
+            <div class="card">
+                <div class="card-header">Real-Time Status</div>
+                <div class="card-content">
+                    <div class="flex-between">
+                        <span class="text-sm text-muted-foreground">Connection:</span>
+                        <span class="badge" id="status-badge">Connecting...</span>
+                    </div>
+                    <div>
+                        <span class="text-sm text-muted-foreground">Last Update:</span>
+                        <p class="text-sm" id="last-update">Waiting for data...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="separator"></div>
+
+            <!-- Route Planner Card -->
+            <div class="card">
+                <div class="card-header">Route Planner</div>
+                <div class="card-content">
+                    <div>
+                        <label for="origin-select">Origin</label>
+                        <select id="origin-select"><option value="">Loading stations...</option></select>
+                    </div>
+                    <div>
+                        <label for="destination-select">Destination</label>
+                        <select id="destination-select"><option value="">Loading stations...</option></select>
+                    </div>
+                    <button id="calculate-route-btn">Calculate Route</button>
+                </div>
+            </div>
+
+            <!-- Route Result Card (hidden by default) -->
+            <div id="route-result-card" class="card" style="display: none;">
+                <div class="card-header">Your Route</div>
+                <div class="card-content" id="route-result-content">
+                    <!-- Results will be injected here by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Initial Setup ---
+        const map = L.map('map').setView([3.1390, 101.6869], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // --- 2. DOM Element References ---
+        const statusBadge = document.getElementById('status-badge');
+        const lastUpdateEl = document.getElementById('last-update');
+        const originSelect = document.getElementById('origin-select');
+        const destinationSelect = document.getElementById('destination-select');
+        const calculateBtn = document.getElementById('calculate-route-btn');
+        const routeResultCard = document.getElementById('route-result-card');
+        const routeResultContent = document.getElementById('route-result-content');
+
+        // --- 3. Data Storage ---
+        let stationData = {}; // Stores { name: { latitude, longitude } }
+        let trainMarkers = {}; // Stores { train_id: marker_object }
+
+        // --- 4. WebSocket Connection & Handlers ---
+        const socket = io.connect('http://' + document.domain + ':' + location.port);
+
+        socket.on('connect', () => {
+            statusBadge.textContent = 'Connected';
+            statusBadge.className = 'badge connected';
+        });
+
+        socket.on('disconnect', () => {
+            statusBadge.textContent = 'Disconnected';
+            statusBadge.className = 'badge disconnected';
+        });
+
+        socket.on('new_train_position', (data) => {
+            lastUpdateEl.textContent = `Train ${data.train_id} is at ${data.current_station}.`;
+            const station = stationData[data.current_station];
+            if (!station || !station.latitude || !station.longitude) return;
+
+            const newPosition = [station.latitude, station.longitude];
+            
+            if (trainMarkers[data.train_id]) {
+                trainMarkers[data.train_id].setLatLng(newPosition);
+            } else {
+                const trainIcon = L.divIcon({
+                    html: `<div>🚇</div>`,
+                    className: 'train-marker-icon',
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                });
+                trainMarkers[data.train_id] = L.marker(newPosition, { icon: trainIcon }).addTo(map);
+            }
+            trainMarkers[data.train_id].bindPopup(`<b>Train ID:</b> ${data.train_id}`);
+        });
+
+        // --- 5. Station, Line, and Route Logic ---
+        async function fetchAndSetupStations() {
+            try {
+                const response = await fetch('/api/stations');
+                const stations = await response.json();
+                
+                stations.sort((a, b) => a.name.localeCompare(b.name));
+                
+                originSelect.innerHTML = '<option value="">Select an origin...</option>';
+                destinationSelect.innerHTML = '<option value="">Select a destination...</option>';
+
+                stations.forEach(station => {
+                    stationData[station.name] = { latitude: station.latitude, longitude: station.longitude };
+                    
+                    const option = document.createElement('option');
+                    option.value = station.name;
+                    option.textContent = station.name;
+                    originSelect.appendChild(option.cloneNode(true));
+                    destinationSelect.appendChild(option.cloneNode(true));
+
+                    if (station.latitude && station.longitude) {
+                        const stationIcon = L.divIcon({
+                            html: `<div></div>`,
+                            className: 'station-marker-icon',
+                            iconSize: [12, 12],
+                            iconAnchor: [6, 6]
+                        });
+                        L.marker([station.latitude, station.longitude], { icon: stationIcon })
+                            .addTo(map).bindPopup(`<b>${station.name}</b>`);
+                    }
+                });
+                
+                await fetchAndDrawLines();
+            } catch (error) {
+                console.error("Failed to fetch stations:", error);
+            }
+        }
+
+        async function fetchAndDrawLines() {
+            const lineColors = {
+                "Kelana Jaya Line": "#ed0f4c",
+                "Kajang Line": "#3e865c"
+            };
+
+            try {
+                const response = await fetch('/api/lines');
+                const data = await response.json();
+                const lines = data.lines;
+                const interchanges = data.interchanges;
+
+                for (const lineName in lines) {
+                    const stationNames = lines[lineName];
+                    const lineColor = lineColors[lineName] || '#000';
+
+                    for (let i = 0; i < stationNames.length - 1; i++) {
+                        const stn1 = stationData[stationNames[i]];
+                        const stn2 = stationData[stationNames[i + 1]];
+
+                        if (stn1 && stn1.latitude && stn2 && stn2.latitude) {
+                            const latLngs = [[stn1.latitude, stn1.longitude], [stn2.latitude, stn2.longitude]];
+                            L.polyline(latLngs, { color: lineColor, weight: 4, opacity: 0.8 }).addTo(map);
+                        }
+                    }
+                }
+
+                if (interchanges) {
+                    interchanges.forEach(pair => {
+                        const stnA = stationData[pair[0]];
+                        const stnB = stationData[pair[1]];
+
+                        if (stnA && stnA.latitude && stnB && stnB.latitude) {
+                             const latLngs = [[stnA.latitude, stnA.longitude], [stnB.latitude, stnB.longitude]];
+                             L.polyline(latLngs, { color: '#444444', weight: 3, opacity: 0.9, dashArray: '5, 10' }).addTo(map);
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error("Failed to draw lines:", error);
+            }
+        }
+
+        async function handleCalculateRoute() {
+            const origin = originSelect.value;
+            const destination = destinationSelect.value;
+            if (!origin || !destination) {
+                alert("Please select both an origin and a destination.");
+                return;
+            }
+            
+            calculateBtn.textContent = 'Calculating...';
+            calculateBtn.disabled = true;
+            routeResultCard.style.display = 'none';
+
+            try {
+                const response = await fetch(`/api/route?from=${encodeURIComponent(origin)}&to=${encodeURIComponent(destination)}`);
+                const routeData = await response.json();
+
+                if (response.ok) {
+                    const resultHTML = `
+                        <div class="flex-between">
+                            <span class="text-sm text-muted-foreground">Total Fare:</span>
+                            <span class="text-sm font-weight-bold">RM ${routeData.total_fare.toFixed(2)}</span>
+                        </div>
+                        <div class="flex-between">
+                            <span class="text-sm text-muted-foreground">Est. Time:</span>
+                            <span class="text-sm font-weight-bold">${routeData.total_time_minutes} minutes</span>
+                        </div>
+                        <div>
+                            <span class="text-sm text-muted-foreground">Path:</span>
+                            <p class="text-sm">${routeData.path_description}</p>
+                        </div>
+                    `;
+                    routeResultContent.innerHTML = resultHTML;
+                    routeResultCard.style.display = 'block';
+                } else {
+                    alert('Error: ' + routeData.error);
+                }
+            } catch (error) {
+                alert('An error occurred while calculating the route.');
+            } finally {
+                calculateBtn.textContent = 'Calculate Route';
+                calculateBtn.disabled = false;
+            }
+        }
+
+        // --- 6. Initial Execution ---
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchAndSetupStations();
+            calculateBtn.addEventListener('click', handleCalculateRoute);
+        });
+    </script>
+</body>
+</html>

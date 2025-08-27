@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KL Transit Planner · Kiosk</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lucide-static@0.452.0/font/lucide.css" />
+  <style>
+    :root { --bg:#0b1220;--card:#101a2b;--muted:#8ea3b0;--text:#ebf2f7;--primary:#3ba8ff;--kgl:#1f8f3a;--rail:#5468ff;--kjl:#e74c3c;--shadow:0 10px 30px rgba(0,0,0,.25)}
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,sans-serif}
+    .app{max-width:1200px;margin:0 auto;padding:12px;gap:16px;display:grid;grid-template-columns:420px minmax(0,1fr);grid-auto-rows:min-content;align-items:start;}
+    header{grid-column:1 / -1;display:flex;align-items:center;gap:12px;padding:8px 12px}
+    header .tabs{display:flex;gap:8px}
+    .badge{background:#142540;color:var(--text);padding:8px 12px;border-radius:14px;box-shadow:var(--shadow)}
+    .live-dot{width:10px;height:10px;background:#30e282;display:inline-block;border-radius:50%;margin-right:6px;box-shadow:0 0 0 3px rgba(48,226,130,.2)}
+    .panel{max-width: 100%; box-sizing: border-box;}
+    .planner{padding:14px;display:grid;gap:14px;align-content:start}
+    .field{display:grid;grid-template-columns:28px 1fr 28px;align-items:center;gap:8px;background:#0e1727;border:1px solid #22314c;padding:8px 10px;border-radius:12px}
+    .field input{background:transparent;border:none;color:var(--text);outline:none;font-size:16px}
+    .swap{cursor:pointer;opacity:.85}
+    .go-btn{width:100%;background:var(--primary);color:#031224;font-weight:700;padding:12px;border:0;border-radius:12px;cursor:pointer}
+    
+    
+    
+    
+    .itins{display:grid;gap:10px;max-height:calc(100vh - 280px);overflow:auto;padding-bottom:10px}
+    .itin{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px;border:1px solid #23324d;border-radius:14px;background:#0e1727}
+    .itin .headline{font-weight:700}
+    .itin .sub{color:var(--muted);font-size:13px}
+    .segments{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+    .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:12px;font-weight:700;font-size:13px}
+    
+    .pill.kgl{background:var(--kgl);color:#e8ffe5}
+    .pill.kjl{background:var(--kjl);color:#ffe9e8}
+    #map{width:100%;height:clamp(380px, 62vh, 680px);display:block;}
+    .legend{position:absolute;z-index:999;right:16px;top:100px;background:rgba(8,14,25,.9);padding:8px 10px;border-radius:10px;border:1px solid #23324d}
+    .legend .row{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px}
+    .swatch{width:12px;height:12px;border-radius:3px;display:inline-block}
+    .train-icon{ width:50px; height:50px; border-radius:50%;display:flex; align-items:center; justify-content:center;color:#fff; border:2px solid #fff; font-size:20px; font-weight:700;box-shadow:0 2px 6px rgba(0,0,0,.35);}
+    .leaflet-container{ max-width:100%;}
+    .itin .steps{ min-width: 0; overflow: hidden;}
+    .panel, .panel *,.itins,#routeSteps{max-width:100%;min-width:0;box-sizing:border-box;}
+
+    /*realtime status panel*/
+    
+    
+    
+    
+    
+     
+    
+    
+    
+    .badge{font-weight:700;font-size:11px;padding:2px 6px;border-radius:999px;color:#fff;margin-right:6px}
+    
+    .map-panel{ grid-column:2 / 3;position:relative;width:100%;min-width:0;overflow:hidden;z-index:1;}
+    #liveStatus, .planner{ grid-column:1 / 2;position:relative;z-index:3;min-width:0;width:100%;box-sizing:border-box; }
+    
+    
+    
+    
+    .chip{ padding:2px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+    .chip.online{ background:#2ecc71; color:#073; }
+    .chip.offline{ background:#e67e22; color:#341; }
+    @media(max-width: 980px){.app{ grid-template-columns: 1fr; }#liveStatus, .planner, .map-panel{ grid-column: 1 / 2; }}
+
+    /*route steps*/
+    .steps{margin-top:12px;background:#0e1727;border:1px solid #23324d;border-radius:14px;padding:12px;display:block;}
+    .seg-block{ position:relative; padding:6px 0; }
+    .seg-title{ position:relative; z-index:2; display:flex; gap:8px;  }
+    .seg-title span:last-child{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .seg-block .rail{position:absolute; left:86px; top:38px; bottom:16px;width: 2px; background:var(--line, #3BA8FF); border-radius:2px; opacity:.9; z-index: 1;}
+    .step-row{display:grid; grid-template-columns:72px 18px 1fr; gap:10px; align-items:center; padding:3px 0;}
+    .step-time{ color:var(--muted); font-size:13px; justify-self:end; font-variant-numeric:tabular-nums; }
+    .step-railcol{ display:flex; justify-content:center; }
+    .step-dot{width:8px; height:8px; border-radius:50%; background:#0e1727; border:2px solid var(--line, #3BA8FF);}
+    .step-row.origin .step-dot,
+    .step-row.dest   .step-dot{ background:var(--line, #3BA8FF); }
+    .step-row.dest .step-time{ visibility:hidden; }
+    .step-name{ font-size:14px; line-height:1.2; }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="tabs">
+        <span class="badge"><span class="live-dot"></span>Live Trains</span>
+        <span class="badge">🚈 Rail Map</span>
+      </div>
+    </header>
+
+    <!-- Realtime status -->
+    <section class="panel status-card" id="liveStatus">
+      <h3>Real-Time Status</h3>
+      <div class="row">
+        <span class="label">Connection:</span>
+        <span id="connBadge" class="chip offline">Disconnected</span>
+      </div>
+      <div class="row">
+        <span class="label">Last Update:</span>
+        <div id="lastUpdate" class="sub">Waiting for train updates…</div>
+      </div>
+    </section>
+
+    <section class="panel planner">
+      <div class="field">
+        <i class="lucide-map-pin"></i>
+        <input id="fromInput" list="stationsList" placeholder="Origin"/>
+        <i class="lucide-arrow-up-down swap" title="Swap" id="swapBtn"></i>
+      </div>
+      <div class="field">
+        <i class="lucide-map-pin"></i>
+        <input id="toInput" list="stationsList" placeholder="Destination"/>
+        <span></span>
+      </div>
+      <datalist id="stationsList"></datalist>
+      <div class="time-ctrl" id="leaveControl">
+        <label for="leaveTime">Leave:</label>
+        <input type="time" id="leaveTime" />
+        <button type="button" id="leaveNowBtn" title="Use current time">Now</button>
+      </div>
+      <button class="go-btn" id="planBtn">Plan route</button>
+      <div class="itins" id="itins"></div>
+      <div class="steps" id="routeSteps"></div>
+    </section>
+
+    <section class="panel map-panel" style="position: relative;">
+      <div id="map"></div>
+      <div class="legend">
+      <div class="row"><span class="swatch" style="background: var(--kgl)"></span> KGL</div>
+      <div class="row"><span class="swatch" style="background: var(--kjl)"></span> KJL</div>
+</div>
+    </section>
+  </div>
+
+  <script>
+    // Same-origin API (Flask serves /api/* on the same port)
+    const ROUTE_ENDPOINT = '/api/route';
+
+    // --- Map ---
+  const map = L.map('map', { zoomControl: false }).setView([3.1179, 101.6757], 11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  
+  //Line Colour
+  const LINE_COLORS = {
+    KGL: '#1f8f3a', //Green for KAJANG line
+    KJL: '#e74c3c', //Red for KELANA JAYA line
+    DEFAULT: '#3BA8FF'
+  };
+
+  //Layer for live trains
+  const railLayer   = L.layerGroup().addTo(map);
+  const routeLayer  = L.layerGroup().addTo(map);
+  const trainsLayer = L.layerGroup().addTo(map);  
+  const trainMarkers = new Map();
+  const TRAIN_ICON_SIZE = 50;
+  const TRAIN_ICON_HALF = TRAIN_ICON_SIZE /2;   
+
+function makeTrainIcon(line=null){
+  const color = line === 'KGL' ? '#1f8f3a' : line === 'KJL' ? '#e74c3c' : '#3ba8ff';
+  return L.divIcon({
+    className: 'train-div',
+    html: `<div class="train-icon" style="background:${color};width:${TRAIN_ICON_SIZE}px;height:${TRAIN_ICON_SIZE}px;font-size:${Math.round(TRAIN_ICON_SIZE*0.56)}px">🚆</div>`,
+    iconSize: [TRAIN_ICON_SIZE, TRAIN_ICON_SIZE],
+    iconAnchor: [TRAIN_ICON_HALF, TRAIN_ICON_HALF]
+  });
+}
+
+//Layer of Live Train Status
+const connBadge   = document.getElementById('connBadge');
+const lastUpdate  = document.getElementById('lastUpdate');
+
+function setWsConnected(ok){
+  connBadge.className = 'chip ' + (ok ? 'online' : 'offline');
+  connBadge.textContent = ok ? 'Connected' : 'Disconnected';
+}
+
+function lineCodeForStation(name){
+  const set = STATION_TO_LINES.get(name);
+  if (set?.has('KJL')) return 'KJL';
+  if (set?.has('KGL')) return 'KGL';
+  return 'Rail';
+}
+
+function showLastUpdate({train_id, current_station, timestamp}){
+  const code = lineCodeForStation(current_station);
+  const t = timestamp ? new Date(timestamp) : new Date();
+  const timeStr = t.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+  lastUpdate.textContent = ` ${train_id} is at ${current_station} (${code}).`;
+}
+
+//load stations
+let STATIONS = [];
+const STATION_BY_NAME = new Map();
+let STATION_NAMES = [];
+let STATIONS_LC = [];
+
+async function loadStations() {
+  try {
+    const res = await fetch('/api/stations');
+    const raw = await res.json();
+    STATIONS = (Array.isArray(raw) ? raw : []).map(r => ({
+      name: String(r.name),
+      latitude: Number(r.latitude),
+      longitude: Number(r.longitude),
+    })).filter(s => s.name);
+
+    STATION_BY_NAME.clear();
+    STATIONS.forEach(s => STATION_BY_NAME.set(s.name, s));
+
+    STATION_NAMES = STATIONS.map(s => s.name);
+    STATIONS_LC   = STATION_NAMES.map(n => n.toLowerCase());
+
+      // fill <datalist>
+    const dl = document.getElementById('stationsList');
+    if (dl) dl.innerHTML = STATIONS.map(s => `<option value="${s.name}"></option>`).join('');
+  } catch (e) {
+    console.warn('Failed to load /api/stations', e);
+  }
+}
+loadStations();
+
+let ALL_STATION_COORDS = [];
+let STATION_TO_LINES = new Map();
+
+async function loadLinesAndDraw(){
+  try{
+    const res  = await fetch('/api/lines');
+    const data = await res.json();
+
+    const KGL = data.lines['Kajang Line'] || data.lines['KGL'] || [];
+    const KJL = data.lines['Kelana Jaya Line'] || data.lines['KJL'] || [];
+
+    STATION_TO_LINES.clear();
+    for (const s of KGL) (STATION_TO_LINES.get(s) || STATION_TO_LINES.set(s, new Set()).get(s)).add('KGL');
+    for (const s of KJL) (STATION_TO_LINES.get(s) || STATION_TO_LINES.set(s, new Set()).get(s)).add('KJL');
+
+    ALL_STATION_COORDS = [];
+    drawRailPolyline(KGL, LINE_COLORS.KGL);
+    drawRailPolyline(KJL, LINE_COLORS.KJL);
+
+    console.log('[rails]', { kgl: KGL.length, kjl: KJL.length, stationsKnown: STATION_BY_NAME.size });
+  } catch(e){
+    console.warn('Failed to load /api/lines', e);
+  }
+}
+
+function snapToNearestStation(ll){
+  if (!ll || !ALL_STATION_COORDS.length) return ll;
+  let best = ALL_STATION_COORDS[0];
+  let bestD = map.distance(best, ll);
+  for (let i = 1; i < ALL_STATION_COORDS.length; i++){
+    const d = map.distance(ALL_STATION_COORDS[i], ll);
+    if (d < bestD){ bestD = d; best = ALL_STATION_COORDS[i]; }
+  }
+  return best;
+}
+
+function drawRailPolyline(stations, color) {
+  const pts = stations.map(latlngFor).filter(Boolean);
+
+  ALL_STATION_COORDS.push(...pts);
+
+  if (pts.length >= 2) {
+    L.polyline(pts, { color, weight: 4, opacity: 0.95 }).addTo(railLayer);
+  }
+
+  pts.forEach(p => {
+    L.circleMarker(p, {
+      radius: 3, weight: 1, color: '#fff',
+      fillColor: color, fillOpacity: 1
+    }).addTo(railLayer);
+  });
+}
+
+loadLinesAndDraw();
+
+// Leaflet wants [lat, lng]
+function latlngFor(name) {
+  const s = STATION_BY_NAME.get(name);
+  if (!s || Number.isNaN(s.latitude) || Number.isNaN(s.longitude)) return null;
+  return [s.latitude, s.longitude];
+}
+
+//draw the chosen path on the map
+async function drawChosenPathFromStations(pathNames) {
+  if (!pathNames.length) { alert('No path to draw.'); return; }
+
+  const latlngs = [];
+  const missing = [];
+  for (const name of pathNames) {
+    const ll = latlngFor(name);
+    if (ll) latlngs.push(ll); else missing.push(name);
+  }
+
+  if (latlngs.length < 2) {
+    alert('Not enough station coordinates to draw the route.' +
+          (missing.length ? ` Missing: ${missing.join(', ')}` : ''));
+    return;
+  }
+
+  routeLayer.clearLayers();
+
+  const poly = L.polyline(latlngs, { color: '#3ba8ff', weight: 5, opacity: 0.9 }).addTo(routeLayer);
+
+  latlngs.forEach((ll, i) => {
+    const name = pathNames[i] || '';
+    L.circleMarker(ll, { radius: 4, weight: 2, color: '#fff', fillColor: '#1f8f3a', fillOpacity: 1 })
+      .bindTooltip(name, { direction:'top', offset:[0, -(TRAIN_ICON_HALF + 6)] })
+      .addTo(routeLayer);
+  });
+
+  const b = poly.getBounds();
+  if (b.isValid()) map.fitBounds(b, { padding: [40, 40] });
+}
+
+//typo correction
+function lev(a, b) {
+  a = a.toLowerCase(); b = b.toLowerCase();
+  const m = a.length, n = b.length;
+  const dp = Array.from({length: m+1}, (_, i) => Array(n+1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i-1] === b[j-1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i-1][j] + 1, dp[i][j-1] + 1, dp[i-1][j-1] + cost);
+    }
+  }
+  return dp[m][n];
+}
+
+// returns the best matching station name
+function bestStationMatch(input) {
+  if (!input) return null;
+  const q = input.trim().toLowerCase();
+  if (!q || !STATIONS_LC.length) return null;
+
+  // 1) exact
+  let idx = STATIONS_LC.indexOf(q);
+  if (idx !== -1) return STATION_NAMES[idx];
+
+  // 2) prefix
+  idx = STATIONS_LC.findIndex(s => s.startsWith(q));
+  if (idx !== -1) return STATION_NAMES[idx];
+
+  // 3) contains
+  idx = STATIONS_LC.findIndex(s => s.includes(q));
+  if (idx !== -1) return STATION_NAMES[idx];
+
+  // 4) fuzzy
+  let bestName = null, bestD = Infinity;
+  for (let i = 0; i < STATIONS_LC.length; i++) {
+    const d = lev(q, STATIONS_LC[i]);
+    if (d < bestD) { bestD = d; bestName = STATION_NAMES[i]; }
+  }
+  if (bestName && bestD <= Math.min(4, Math.ceil(bestName.length * 0.3))) return bestName;
+  return null;
+}
+
+  // prevent app dies if stations are still loading
+  function bestStationMatchSafe(s) {
+    try { return bestStationMatch(s) || (s || '').trim(); }
+    catch { return (s || '').trim(); }
+}
+
+  // --- UI refs ---
+  const fromInput   = document.getElementById('fromInput');
+  const toInput     = document.getElementById('toInput');
+  const planBtn     = document.getElementById('planBtn');
+  const swapBtn     = document.getElementById('swapBtn');
+  const itinsDiv    = document.getElementById('itins');
+  const leaveTimeEl = document.getElementById('leaveTime');
+  const leaveNowBtn = document.getElementById('leaveNowBtn');
+  const stepsEl = document.getElementById('routeSteps');
+
+  leaveNowBtn.addEventListener('click', () => { leaveTimeEl.value = ''; });
+  swapBtn.addEventListener('click', () => {
+    const tmp = fromInput.value; fromInput.value = toInput.value; toInput.value = tmp;
+  });
+
+  // Plan when clicking the button
+  planBtn.addEventListener('click', () => planFromInputs());
+
+  // Also plan when pressing Enter in either field (optional)
+  [fromInput, toInput, leaveTimeEl].forEach(el => {
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') planFromInputs();
+    });
+  });
+
+  async function planFromInputs() {
+  let fromRaw = fromInput.value;
+  let toRaw   = toInput.value;
+
+  const from = bestStationMatchSafe(fromRaw);
+  const to   = bestStationMatchSafe(toRaw);
+
+  if (!from || !STATION_BY_NAME.has(from)) { alert(`Origin not recognized: "${fromRaw}". Pick from list.`); return; }
+  if (!to   || !STATION_BY_NAME.has(to))   { alert(`Destination not recognized: "${toRaw}". Pick from list.`); return; }
+
+  fromInput.value = from;   // show autocorrect
+  toInput.value   = to;
+
+  await planRoute({ from, to });
+}
+
+function deriveSegmentsFromPath(path){
+  if (!Array.isArray(path) || path.length < 2) return [];
+  const segs = [];
+  const pickLine = (name) => {
+    const set = STATION_TO_LINES.get(name);
+    if (set?.has('KJL')) return 'KJL';
+    if (set?.has('KGL')) return 'KGL';
+    return 'Rail';
+  };
+
+  let curLine = null, buf = [];
+  for (const name of path){
+    const lc = pickLine(name);
+    if (curLine === null){ curLine = lc; buf = [name]; continue; }
+    if (lc === curLine || lc === 'Rail'){
+      buf.push(name);
+    } else {
+      if (buf.length >= 2) segs.push({ line: curLine, stations: [...buf] });
+      // keep junction continuity by repeating last station
+      buf = [buf[buf.length - 1], name];
+      curLine = lc;
+    }
+  }
+  if (buf.length >= 2) segs.push({ line: curLine, stations: buf });
+  return segs;
+}
+
+  // Base time: leave-time if set, else now
+  function getBaseTime(){
+    if (!leaveTimeEl || !leaveTimeEl.value) return new Date();
+    const today = new Date();
+    const [hh,mm] = leaveTimeEl.value.split(':');
+    const dt = new Date(today.getFullYear(), today.getMonth(), today.getDate(), parseInt(hh), parseInt(mm));
+    return isNaN(dt.getTime()) ? new Date() : dt;
+  }
+  function toTime(d){ return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+  function addMin(d,m){ return new Date(d.getTime() + m*60000); }
+
+  async function planRoute({ from, to }) {
+  itinsDiv.innerHTML = '<div class="sub">Searching route…</div>';
+
+  try {
+    const url = `${ROUTE_ENDPOINT}?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+    const res = await fetch(url);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText || 'Route API error');
+
+    // normalize
+    const fare = Number(data.total_fare ?? data.fare ?? 0);
+    const minutes = Number(
+      data.total_time_minutes ?? data.total_time ?? data.minutes ?? data.duration ?? NaN
+    );
+
+    const path = Array.isArray(data.path) ? data.path : [];
+    const segments = Array.isArray(data.segments) && data.segments.length
+      ? data.segments
+      : deriveSegmentsFromPath(path);
+
+    // timing
+    const hopsMinutes = segments.reduce((sum, s) => sum + Math.max(0, (s.stations?.length || 1) - 1) * 2, 0);
+    const duration = Number.isFinite(minutes) ? minutes : hopsMinutes;
+
+    const base = getBaseTime();
+    const depart = toTime(base);
+    const arrive = toTime(addMin(base, duration));
+
+    // itinerary card
+    renderItinerary({
+      duration_minutes: duration,
+      fare,
+      departure_time: depart,
+      arrival_time: arrive,
+      segments,
+      path
+    });
+
+    // timeline (the yellow box)
+    renderRouteTimeline({
+      segments,
+      path,
+      baseTime: base,
+      totalMinutes: duration
+    });
+    try { if (result && (result.segments || result.path)) { drawChosenRoute(result); } } catch (e) { console.warn('drawChosenRoute failed', e); }
+
+  } catch (err) {
+    console.warn('[planner] error:', err);
+    itinsDiv.innerHTML = `
+      <div class="itin">
+        <div>
+          <div class="headline">Couldn’t plan route</div>
+          <div class="sub">${(err && err.message) ? err.message : 'Please try again.'}</div>
+        </div>
+      </div>
+    `;
+    stepsEl.innerHTML = ''; // clear the timeline if there was an error
+  }
+}
+
+  function segmentPill(seg){
+    const line = (seg.line || '').toUpperCase();
+    const hops = Math.max(0, (seg.stations?.length || 1) - 1);
+    const mins = seg.minutes ?? (hops * 2);
+    const cls  = (line === 'KGL') ? 'kgl' : (line === 'KJL') ? 'kjl' : 'rail';
+    const label = line || 'Rail';
+    return `<span class="pill ${cls}">${label} <span class="sub" style="color:inherit; opacity:.8; font-weight:600;">${String(mins).padStart(2,'0')} min</span></span>`;
+  }
+
+  function renderRouteTimeline({ segments, path, baseTime, totalMinutes }){
+  stepsEl.innerHTML = '';
+
+  // normalize segments
+  const segs = Array.isArray(segments) && segments.length
+    ? segments
+    : deriveSegmentsFromPath(path);
+  if (!segs.length){
+    stepsEl.innerHTML = '<div class="sub">No step details available.</div>';
+    return;
+  }
+
+  // compute per-hop minutes (scale to total if provided)
+  const totalHops = segs.reduce((sum,s)=> sum + Math.max(0, (s.stations?.length || 1) - 1), 0);
+  const perHopMin = (totalHops > 0 && Number.isFinite(totalMinutes)) ? (totalMinutes / totalHops) : 2;
+
+  let t = baseTime ? new Date(baseTime.getTime()) : new Date();
+  const frag = document.createDocumentFragment();
+
+  segs.forEach((seg, segIdx) => {
+    const color = LINE_COLORS[seg.line] || LINE_COLORS.DEFAULT;
+    const stations = (seg.stations || []).filter(Boolean);
+    if (stations.length < 2) return;
+
+    const hops = stations.length - 1;
+    const segMins = Math.round(hops * perHopMin);
+
+    const block = document.createElement('div');
+    block.className = 'seg-block';
+    block.style.setProperty('--line', color);
+
+    const header = document.createElement('div');
+    header.className = 'seg-title';
+    header.innerHTML =
+      `<span class="pill ${seg.line === 'KGL' ? 'kgl' : seg.line === 'KJL' ? 'kjl' : 'rail'}">${seg.line || 'Rail'}</span>
+       <span>From <b>${stations[0]}</b> to <b>${stations[stations.length-1]}</b> · ${segMins} min (${hops} stop${hops!==1?'s':''})</span>`;
+    block.appendChild(header);
+
+    const rail = document.createElement('div');
+    rail.className = 'rail';
+    block.appendChild(rail);
+
+    stations.forEach((name, i) => {
+      const row = document.createElement('div');
+      const isFirstOverall = (segIdx === 0 && i === 0);
+      const isLastOverall  = (segIdx === segs.length - 1 && i === stations.length - 1);
+      row.className = 'step-row' + (isFirstOverall ? ' origin' : isLastOverall ? ' dest' : '');
+
+      const time = document.createElement('div');
+      time.className = 'step-time';
+      time.textContent = toTime(t);
+      row.appendChild(time);
+
+      const dotCol = document.createElement('div');
+      dotCol.className = 'step-railcol';
+      const dot = document.createElement('div'); dot.className = 'step-dot';
+      dotCol.appendChild(dot);
+      row.appendChild(dotCol);
+
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'step-name';
+      nameDiv.textContent = name;
+      row.appendChild(nameDiv);
+
+      block.appendChild(row);
+
+      if (!isLastOverall) t = addMin(t, perHopMin);
+    });
+
+    frag.appendChild(block);
+  });
+
+  stepsEl.appendChild(frag);               // <- correct element
+  requestAnimationFrame(adjustRailStart);  // <- call AFTER content is in the DOM
+}
+
+  function renderItinerary(opt) {
+  itinsDiv.innerHTML = '';
+  const row = document.createElement('div');
+  row.className = 'itin';
+
+  const segs = Array.isArray(opt.segments) ? opt.segments : [];
+
+  const breakdownHtml = '';
+
+  row.innerHTML = `
+    <div>
+      <div class="headline">${opt.duration_minutes} min
+        <span class="sub">| RM${Number(opt.fare ?? 0).toFixed(2)}</span>
+      </div>
+      <div class="segments">${segs.map(segmentPill).join(' <span class="sub">›</span> ')}</div>
+      <div class="sub" style="margin-top:4px;">
+        Leave at ${opt.departure_time} · Arrive at ${opt.arrival_time}
+      </div>
+      ${breakdownHtml}
+    </div>
+  `;
+  itinsDiv.appendChild(row);
+}
+
+function drawSegmentPolyline(names, color) {
+  const latlngs = [];
+  for (const n of names) {
+    const ll = latlngFor(n);
+    if (ll) latlngs.push(ll);
+  }
+  if (latlngs.length >=2) {
+    return L.polyline(latlngs, { color, weight: 5, opacity: 0.95 }).addTo(routeLayer);
+  }
+  return null;
+}
+
+function drawChosenRoute(opt) {
+  routeLayer.clearLayers();
+
+  // Prefer segmented drawing if backend provided it
+  if (Array.isArray(opt.segments) && opt.segments.length) {
+    const bounds = [];
+    opt.segments.forEach(seg => {
+      const color = LINE_COLORS[seg.line] || LINE_COLORS.DEFAULT;
+      const line = drawSegmentPolyline(seg.stations || [], color);
+      if (line) bounds.push(line.getBounds());
+    });
+    // station markers (optional)
+    (opt.path || []).forEach(name => {
+      const ll = latlngFor(name);
+      if (ll) L.circleMarker(ll, { radius: 4, weight: 2, color: '#fff', fillColor: '#1f8f3a', fillOpacity: 1 })
+               .bindTooltip(name, { direction: 'top' })
+               .addTo(routeLayer);
+    });
+    // fit to all segments
+    if (bounds.length) {
+      let b = bounds[0];
+      for (let i = 1; i < bounds.length; i++) b = b.extend(bounds[i]);
+      if (b.isValid()) map.fitBounds(b, { padding: [40, 40] });
+    }
+    return;
+  }
+
+  // Fallback: draw the whole path in default color
+  const allNames = Array.isArray(opt.path) ? opt.path : [];
+  const line = drawSegmentPolyline(allNames, LINE_COLORS.DEFAULT);
+  if (line) {
+    (allNames).forEach(name => {
+      const ll = latlngFor(name);
+      if (ll) L.circleMarker(ll, { radius: 4, weight: 2, color: '#fff', fillColor: '#1f8f3a', fillOpacity: 1 })
+               .bindTooltip(name, { direction: 'top' })
+               .addTo(routeLayer);
+    });
+    const b = line.getBounds();
+    if (b.isValid()) map.fitBounds(b, { padding: [40, 40] });
+  } else {
+    alert('Cannot draw: route path is empty. Check /api/route includes a "path" array.');
+  }
+}
+
+function adjustRailStart() {
+  const blocks = stepsEl.querySelectorAll('.seg-block');
+  blocks.forEach(block => {
+    const header   = block.querySelector('.seg-title');
+    const firstRow = block.querySelector('.step-row');
+    const rail     = block.querySelector('.rail');
+    if (!rail) return;
+
+    const headerH = header ? header.offsetHeight : 0;
+    const rowH    = firstRow ? firstRow.offsetHeight : 0;
+
+    rail.style.top = (headerH + rowH + 6) + 'px';
+  });
+}
+
+function setupSocket(){
+  const socket = io();
+  socket.on('connect',    () => setWsConnected(true));
+  socket.on('disconnect', () => setWsConnected(false));
+
+  socket.on('new_train_position', data => {
+    const id = data.train_id;
+    const name = data.current_station;
+
+    const raw = latlngFor(name);
+    const ll  = snapToNearestStation(raw);       
+    if (!ll) return;
+
+    let marker = trainMarkers.get(id);
+    if (!marker){
+      marker = L.marker(ll, { icon: makeTrainIcon(lineCodeForStation(name)), zIndexOffset:1000 })
+        .bindTooltip(`Train ${id} · ${name}`, { direction:'top', offset:[0, -(TRAIN_ICON_HALF + 6)] })
+        .addTo(trainsLayer);
+      trainMarkers.set(id, marker);
+    } else {
+      marker.setLatLng(ll);
+      if (marker.getTooltip()) marker.getTooltip().setContent(`Train ${id} · ${name}`);
+    }
+
+    showLastUpdate(data);
+  });
+}
+
+async function init(){
+  await loadStations();        
+  await loadLinesAndDraw();   
+  setupSocket();              
+  setTimeout(() => map.invalidateSize(), 0);
+  window.addEventListener('resize', () => map.invalidateSize());
+}
+
+init();
+
+</script>
+</body>
+</html>
