@@ -23,7 +23,6 @@
             --destructive: #ef4444;
         }
 
-        /* --- THIS IS THE CORE OF THE RESPONSIVE SOLUTION --- */
         html {
             box-sizing: border-box;
         }
@@ -34,12 +33,12 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             margin: 0;
-            height: 100vh; /* KEY: Makes the body exactly the height of the viewport. */
-            display: flex; /* KEY: Enables flexbox for layout. */
-            flex-direction: column; /* KEY: Stacks children (header, main-content) vertically. */
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
             background-color: var(--background);
             color: var(--foreground);
-            overflow: hidden; /* KEY: Prevents the whole page from ever showing a scrollbar. */
+            overflow: hidden;
         }
 
         #header {
@@ -51,25 +50,25 @@
             font-weight: 500;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             z-index: 1000;
-            flex-shrink: 0; /* ADJUSTMENT: Ensures the header never shrinks. */
+            flex-shrink: 0;
         }
 
         #main-content {
-            flex-grow: 1; /* KEY: This makes this div take up all remaining vertical space. */
-            display: flex; /* KEY: Enables flexbox for its children (map, sidebar). */
-            min-height: 0; /* Prevents flexbox overflow issues in some browsers */
+            flex-grow: 1;
+            display: flex;
+            min-height: 0;
         }
 
         #map {
-            flex-grow: 1; /* KEY: This makes the map take up all remaining horizontal space. */
+            flex-grow: 1;
         }
 
         #sidebar {
             width: 350px;
-            flex-shrink: 0; /* ADJUSTMENT: Ensures the sidebar maintains its 350px width and doesn't shrink. */
+            flex-shrink: 0;
             background-color: var(--card);
             border-left: 1px solid var(--border);
-            overflow-y: auto; /* KEY: If content is too tall, a scrollbar appears HERE, not on the page. */
+            overflow-y: auto;
             padding: 1.5rem;
             display: flex;
             flex-direction: column;
@@ -98,7 +97,7 @@
             margin: 0;
         }
         
-        /* --- 3. UI Element Styles (No changes needed here) --- */
+        /* --- 3. UI Element Styles --- */
         .badge { display: inline-block; padding: 0.25em 0.6em; font-size: 0.875rem; font-weight: 600; border-radius: 9999px; }
         .badge.connected { background-color: var(--success); color: white; }
         .badge.disconnected { background-color: var(--destructive); color: white; }
@@ -111,14 +110,37 @@
         .text-muted-foreground { color: var(--muted-foreground); }
         .flex-between { display: flex; justify-content: space-between; align-items: center; }
 
-        /* --- 4. Custom Map Marker Styles (No changes needed here) --- */
+        /* --- 4. Custom Map Marker & Route Styles --- */
         .station-marker-icon div { background: #3b82f6; border-radius: 50%; width: 12px; height: 12px; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        
+        /* --- NEW: Style for the currently active station marker --- */
+        .station-marker-icon-highlighted div {
+            background: #f59e0b; /* Bright yellow/orange */
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            border: 3px solid white;
+            box-shadow: 0 0 10px #f59e0b; /* Glow effect */
+            transform: scale(1.2); /* Make it slightly bigger */
+        }
+
         .train-marker-icon div { background: #ef4444; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        
+        /* --- NEW: Styles for highlighting the route path in the sidebar --- */
+        .path-station {
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            transition: background-color 0.3s, font-weight 0.3s;
+        }
+        .path-station.active {
+            background-color: #e0f2fe; /* Light blue background */
+            font-weight: 600;
+            color: #0c4a6e; /* Darker blue text */
+        }
 
     </style>
 </head>
 <body>
-    <!-- Your HTML Body is perfect, no changes needed -->
     <div id="header">Metro Tracking Kiosk</div>
     <div id="main-content">
         <div id="map"></div>
@@ -158,7 +180,6 @@
         </div>
     </div>
 
-    <!-- Your JavaScript is perfect, no changes needed -->
     <script>
         // --- 1. Initial Setup ---
         const map = L.map('map').setView([3.1390, 101.6869], 12);
@@ -178,6 +199,9 @@
         // --- 3. Data Storage ---
         let stationData = {}; // Stores { name: { latitude, longitude } }
         let trainMarkers = {}; // Stores { train_id: marker_object }
+        let stationMarkers = {}; // --- NEW: To store references to station L.marker objects
+        let highlightedRouteLayer = null; // --- NEW: To store the highlighted route Polyline
+        let currentStationName = null; // --- NEW: To track the currently highlighted station
 
         // --- 4. WebSocket Connection & Handlers ---
         const socket = io.connect('http://' + document.domain + ':' + location.port);
@@ -197,6 +221,36 @@
             const station = stationData[data.current_station];
             if (!station || !station.latitude || !station.longitude) return;
 
+            // --- NEW: LOGIC TO HIGHLIGHT CURRENT STATION ---
+            // 1. Un-highlight the previous station (if there was one)
+            if (currentStationName && stationMarkers[currentStationName]) {
+                stationMarkers[currentStationName].setIcon(L.divIcon({
+                    html: `<div></div>`,
+                    className: 'station-marker-icon',
+                    iconSize: [12, 12], iconAnchor: [6, 6]
+                }));
+                const prevSidebarEl = document.getElementById(`station-${currentStationName.replace(/\s+/g, '-')}`);
+                if (prevSidebarEl) {
+                    prevSidebarEl.classList.remove('active');
+                }
+            }
+            
+            // 2. Highlight the new current station
+            currentStationName = data.current_station;
+            if (stationMarkers[currentStationName]) {
+                stationMarkers[currentStationName].setIcon(L.divIcon({
+                    html: `<div></div>`,
+                    className: 'station-marker-icon-highlighted',
+                    iconSize: [16, 16], iconAnchor: [8, 8]
+                }));
+                const currentSidebarEl = document.getElementById(`station-${currentStationName.replace(/\s+/g, '-')}`);
+                if (currentSidebarEl) {
+                    currentSidebarEl.classList.add('active');
+                    currentSidebarEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+            // --- END NEW LOGIC ---
+
             const newPosition = [station.latitude, station.longitude];
             
             if (trainMarkers[data.train_id]) {
@@ -205,8 +259,7 @@
                 const trainIcon = L.divIcon({
                     html: `<div>🚇</div>`,
                     className: 'train-marker-icon',
-                    iconSize: [24, 24],
-                    iconAnchor: [12, 12]
+                    iconSize: [24, 24], iconAnchor: [12, 12]
                 });
                 trainMarkers[data.train_id] = L.marker(newPosition, { icon: trainIcon }).addTo(map);
             }
@@ -237,11 +290,12 @@
                         const stationIcon = L.divIcon({
                             html: `<div></div>`,
                             className: 'station-marker-icon',
-                            iconSize: [12, 12],
-                            iconAnchor: [6, 6]
+                            iconSize: [12, 12], iconAnchor: [6, 6]
                         });
-                        L.marker([station.latitude, station.longitude], { icon: stationIcon })
+                        // --- MODIFIED: Store the marker in our new object ---
+                        const marker = L.marker([station.latitude, station.longitude], { icon: stationIcon })
                             .addTo(map).bindTooltip(`<b>${station.name}</b>`);
+                        stationMarkers[station.name] = marker;
                     }
                 });
                 
@@ -252,11 +306,7 @@
         }
 
         async function fetchAndDrawLines() {
-            const lineColors = {
-                "Kelana Jaya Line": "#ed0f4c",
-                "Kajang Line": "#3e865c"
-            };
-
+            const lineColors = { "Kelana Jaya Line": "#ed0f4c", "Kajang Line": "#3e865c" };
             try {
                 const response = await fetch('/api/lines');
                 const data = await response.json();
@@ -266,26 +316,20 @@
                 for (const lineName in lines) {
                     const stationNames = lines[lineName];
                     const lineColor = lineColors[lineName] || '#000';
-
                     for (let i = 0; i < stationNames.length - 1; i++) {
                         const stn1 = stationData[stationNames[i]];
                         const stn2 = stationData[stationNames[i + 1]];
-
                         if (stn1 && stn1.latitude && stn2 && stn2.latitude) {
-                            const latLngs = [[stn1.latitude, stn1.longitude], [stn2.latitude, stn2.longitude]];
-                            L.polyline(latLngs, { color: lineColor, weight: 4, opacity: 0.8 }).addTo(map);
+                            L.polyline([[stn1.latitude, stn1.longitude], [stn2.latitude, stn2.longitude]], { color: lineColor, weight: 4, opacity: 0.8 }).addTo(map);
                         }
                     }
                 }
-
                 if (interchanges) {
                     interchanges.forEach(pair => {
                         const stnA = stationData[pair[0]];
                         const stnB = stationData[pair[1]];
-
                         if (stnA && stnA.latitude && stnB && stnB.latitude) {
-                             const latLngs = [[stnA.latitude, stnA.longitude], [stnB.latitude, stnB.longitude]];
-                             L.polyline(latLngs, { color: '#444444', weight: 3, opacity: 0.9, dashArray: '5, 10' }).addTo(map);
+                             L.polyline([[stnA.latitude, stnA.longitude], [stnB.latitude, stnB.longitude]], { color: '#444444', weight: 3, opacity: 0.9, dashArray: '5, 10' }).addTo(map);
                         }
                     });
                 }
@@ -302,13 +346,13 @@
                 return;
             }
             
-            // --- THIS IS THE NEW FIX ---
-            // Before starting a new calculation, clear all existing train markers from the map.
-            for (const trainId in trainMarkers) {
-                map.removeLayer(trainMarkers[trainId]);
+            for (const trainId in trainMarkers) { map.removeLayer(trainMarkers[trainId]); }
+            trainMarkers = {};
+
+            // --- NEW: Remove the previous highlighted route before drawing a new one ---
+            if (highlightedRouteLayer) {
+                map.removeLayer(highlightedRouteLayer);
             }
-            trainMarkers = {}; // Reset the storage object
-            // --- END OF FIX ---
             
             calculateBtn.textContent = 'Calculating...';
             calculateBtn.disabled = true;
@@ -319,6 +363,11 @@
                 const routeData = await response.json();
 
                 if (response.ok) {
+                    // --- MODIFIED: Generate a structured path list for the sidebar ---
+                    const pathHtml = routeData.path.map(station =>
+                        `<div class="path-station" id="station-${station.replace(/\s+/g, '-')}">${station}</div>`
+                    ).join('');
+
                     const resultHTML = `
                         <div class="flex-between">
                             <span class="text-sm text-muted-foreground">Total Fare:</span>
@@ -330,14 +379,29 @@
                         </div>
                         <div>
                             <span class="text-sm text-muted-foreground">Path:</span>
-                            <p class="text-sm">${routeData.path_description}</p>
+                            <div style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.25rem;">${pathHtml}</div>
                         </div>
                     `;
                     routeResultContent.innerHTML = resultHTML;
                     routeResultCard.style.display = 'block';
 
-                    // Trigger the new simulation
+                    // --- NEW: Draw the highlighted route on the map ---
                     if (routeData.path && routeData.path.length > 0) {
+                        const routeCoordinates = routeData.path.map(stationName => {
+                            const station = stationData[stationName];
+                            return station ? [station.latitude, station.longitude] : null;
+                        }).filter(coord => coord !== null);
+
+                        if (routeCoordinates.length > 1) {
+                            highlightedRouteLayer = L.polyline(routeCoordinates, {
+                                color: '#007bff', // A bright, distinct blue
+                                weight: 7,
+                                opacity: 0.85,
+                            }).addTo(map);
+                            map.fitBounds(highlightedRouteLayer.getBounds().pad(0.1));
+                        }
+                        
+                        // Trigger the simulation
                         console.log("Requesting simulation for path:", routeData.path);
                         socket.emit('start_simulation', { path: routeData.path });
                     }
